@@ -1,7 +1,7 @@
 # Diagnose-AionInstructPreview.ps1 -- first-launch hang diagnostic for AionInstructPreview.Chat.
 #
-# When the app sits on the "Loading Aion Instruct Preview model..." screen far longer than
-# the expected ~3-5 minute NPU compile window, run this script to figure out
+# When the app sits on the "Loading Aion Instruct Preview model..." screen longer than
+# expected for cold NPU compilation, run this script to figure out
 # which prerequisite is missing or which EP path the SDK is being driven down.
 #
 # Usage:
@@ -40,6 +40,7 @@ if ($nativeArch) {
 
 $arch = switch ($rawArch) {
     'ARM64' { 'ARM64' }
+    'AMD64' { 'x64' }
     default { $null }
 }
 
@@ -85,17 +86,26 @@ Write-Host ('Host: {0}  User: {1}  Date: {2}' -f $env:COMPUTERNAME, $env:USERNAM
 Write-Section '1. Hardware'
 
 $ci = Get-ComputerInfo -Property CsManufacturer, CsModel, CsProcessors -ErrorAction SilentlyContinue
+$procName = '(unknown)'
 if ($ci) {
     $proc = $ci.CsProcessors | Select-Object -First 1
     $procName = if ($proc) { $proc.Name } else { '(unknown)' }
-    $detail = "Manufacturer: $($ci.CsManufacturer)`nModel: $($ci.CsModel)`nProcessor: $procName`nProcess architecture: $emulatedArch`nNative architecture: $nativeArch`nResolved architecture: $rawArch"
+    # PROCESSOR_ARCHITEW6432 is only set under WOW64, so on a native 64-bit shell it is
+    # legitimately empty. Say so rather than printing a blank next to two populated lines,
+    # which reads like a detection failure.
+    $nativeArchDisplay = if ($nativeArch) { $nativeArch } else { '(not set -- native 64-bit shell, not WOW64)' }
+    $detail = "Manufacturer: $($ci.CsManufacturer)`nModel: $($ci.CsModel)`nProcessor: $procName`nProcess architecture: $emulatedArch`nNative architecture: $nativeArchDisplay`nResolved architecture: $rawArch"
 
     if ($arch -eq 'ARM64' -and $procName -match 'Snapdragon|Qualcomm|Hexagon|Oryon') {
         Write-Check PASS 'Snapdragon ARM64 (Copilot+ PC class) -- QNN NPU path expected' $detail
     } elseif ($arch -eq 'ARM64') {
         Write-Check WARN 'ARM64 but processor name doesn''t match a known Snapdragon SKU' $detail
-    } elseif ($rawArch -eq 'AMD64') {
-        Write-Check WARN 'x64 host -- x64 (Intel/AMD) support is coming soon; this preview supports ARM64/Snapdragon (QNN NPU) only' $detail
+    } elseif ($arch -eq 'x64' -and $procName -match 'Intel|Core\s*Ultra|Lunar|Arrow|Meteor') {
+        Write-Check PASS 'Intel x64 -- catalog OpenVINO NPU path expected' $detail
+    } elseif ($arch -eq 'x64' -and $procName -match 'AMD|Ryzen|Strix') {
+        Write-Check WARN 'AMD support is coming soon' $detail
+    } elseif ($arch -eq 'x64') {
+        Write-Check WARN 'x64 host, but the processor name does not match a supported Intel NPU' $detail
     } else {
         Write-Check WARN ('Unexpected architecture: ' + $rawArch) $detail
     }
@@ -137,7 +147,8 @@ function Check-Package {
         [string]$MinVersion = '',
         [bool]$Required = $true
     )
-    $pkgs = @(Get-AppxPackage -Name $Name -ErrorAction SilentlyContinue)
+    $pkgs = @(Get-AppxPackage -Name $Name -ErrorAction SilentlyContinue |
+        Where-Object { $_.Architecture -eq $arch })
     if ($pkgs.Count -eq 0) {
         if ($Required) {
             Write-Check FAIL ("$Friendly not installed (Get-AppxPackage $Name returned nothing)")
@@ -149,32 +160,55 @@ function Check-Package {
     foreach ($pkg in $pkgs) {
         $detail = "PackageFullName: $($pkg.PackageFullName)`nArchitecture: $($pkg.Architecture)  Version: $($pkg.Version)"
         if ($MinVersion -and [version]$pkg.Version -lt [version]$MinVersion) {
-            Write-Check WARN ("$Friendly installed but older than expected (need >= $MinVersion)") $detail
+            $status = if ($Required) { 'FAIL' } else { 'WARN' }
+            Write-Check $status ("$Friendly installed but older than required (need >= $MinVersion)") $detail
         } else {
             Write-Check PASS "$Friendly installed" $detail
         }
     }
 }
 
-Check-Package -Name 'Microsoft.AionInstructPreview.Framework.1.0' -Friendly 'Aion Instruct Preview framework MSIX'
+Check-Package -Name 'Microsoft.AionInstructPreview.Framework.1.0' `
+              -Friendly 'Aion Instruct Preview framework MSIX' -MinVersion '1.0.0.3'
 Check-Package -Name 'Microsoft.WindowsAppRuntime.2' -Friendly 'Windows App Runtime 2' -MinVersion '2.0.1.0'
-Check-Package -Name 'Microsoft.WindowsAppRuntime.1.8' -Friendly 'Windows App Runtime 1.8' -MinVersion '8000.836.2153.0'
 if ($arch -eq 'ARM64') {
-    Check-Package -Name 'MicrosoftCorporationII.WinML.Qualcomm.QNN.EP.1.8*' -Friendly 'Qualcomm QNN execution provider 1.8'
+    $qnn = @(Get-AppxPackage -Name '*WinML.Qualcomm.QNN.EP*.2*' -ErrorAction SilentlyContinue |
+        Where-Object { $_.Architecture -eq $arch })
+    if ($qnn.Count -eq 0) {
+        Write-Check INFO 'QNN EP 2 is not installed yet; the framework will acquire it on first model load'
+    } else {
+        Check-Package -Name '*WinML.Qualcomm.QNN.EP*.2*' `
+                      -Friendly 'Qualcomm QNN execution provider 2' -MinVersion '2.2480.49.0'
+    }
+} elseif ($arch -eq 'x64' -and $procName -match 'Intel') {
+    Check-Package -Name '*WinML.Intel.OpenVINO.EP.Framework.2*' `
+                  -Friendly 'Intel OpenVINO catalog execution provider' `
+                  -MinVersion '1.8.95.0'
+} elseif ($arch -eq 'x64' -and $procName -match 'AMD|Ryzen|Strix') {
+    Write-Check WARN 'AMD support is coming soon; provider readiness was not evaluated'
 }
-Check-Package -Name 'AionInstructPreviewChat' -Friendly 'AionInstructPreview.Chat consumer app'
+# The packaged WinUI app is optional: the console and WPF samples are equally valid
+# consumers, and a developer using only those should not get a hard failure here.
+Check-Package -Name 'AionInstructPreviewChat' -Friendly 'AionInstructPreview.Chat consumer app' -Required $false
 
-# Wider EP package sweep -- names vary by SKU / channel.
+# Wider EP package sweep -- informational only.
+#
+# Deliberately INFO, never PASS. This is a loose name match that also catches unrelated
+# packages (Microsoft.Windows.Apprep.ChxApp, the various *.Framework.* companions), so a
+# non-zero count says nothing about whether the SDK can actually run. It previously
+# reported PASS on a machine whose required OpenVINO EP was missing and where the SDK
+# could not start at all. The pinned per-architecture checks above are the real gate;
+# this list is here to help a human see what is present.
 Write-Host ''
 Write-Host '       (scanning for execution-provider packages...)' -ForegroundColor DarkGray
 $epPackages = @(Get-AppxPackage | Where-Object {
-    $_.Name -match 'Qnn|Qualcomm|WindowsWorkload|EP\.|ExecutionProvider|OnnxRuntime|MachineLearning|OpenVINO'
+    $_.Name -match 'Qnn|Qualcomm|AMD|Vitis|WindowsWorkload|EP\.|ExecutionProvider|OnnxRuntime|MachineLearning|OpenVINO'
 })
 if ($epPackages.Count -gt 0) {
     $detail = ($epPackages | ForEach-Object { '{0,-65} {1,-12} {2}' -f $_.Name, $_.Architecture, $_.Version }) -join "`n"
-    Write-Check PASS ("Found $($epPackages.Count) EP-related package(s)") $detail
+    Write-Check INFO ("$($epPackages.Count) EP-related package(s) present (informational -- see the pinned check above)") $detail
 } else {
-    Write-Check WARN 'No QNN/EP packages found via AppX -- catalog may still know about them via Windows Update channels'
+    Write-Check INFO 'No EP-related packages found via AppX (informational -- see the pinned check above)'
 }
 
 # ---------------------------------------------------------------------------
@@ -182,7 +216,9 @@ if ($epPackages.Count -gt 0) {
 # ---------------------------------------------------------------------------
 Write-Section '3. Aion Instruct Preview framework MSIX contents'
 
-$aionPkg = Get-AppxPackage Microsoft.AionInstructPreview.Framework.1.0 -ErrorAction SilentlyContinue
+$aionPkg = Get-AppxPackage Microsoft.AionInstructPreview.Framework.1.0 -ErrorAction SilentlyContinue |
+    Where-Object { $_.Architecture -eq $arch } |
+    Sort-Object Version -Descending | Select-Object -First 1
 if ($aionPkg) {
     $installRoot = $aionPkg.InstallLocation
     Write-Check INFO ('Install location: ' + $installRoot)
@@ -199,7 +235,7 @@ if ($aionPkg) {
         }
     }
     if ($missing.Count -eq 0) {
-        Write-Check PASS 'AionInstructPreview.Text.dll, muffinapi.dll, Models\ all present'
+        Write-Check PASS 'Required framework runtime and model files present'
     } else {
         Write-Check FAIL ('Missing in framework MSIX: ' + ($missing -join ', '))
     }
@@ -245,7 +281,7 @@ foreach ($loc in $cacheLocations) {
     Write-Check PASS ("$($loc.Label): $($files.Count) files, $totalMB MB at $($loc.Path)") $detail
 }
 if (-not $cacheFound) {
-    Write-Check INFO 'No prior cache artifacts -- first launch will need to compile (expected ~3-5 min on NPU)'
+    Write-Check INFO 'No prior cache artifacts -- first launch may take several minutes to compile on the NPU'
 }
 
 # ---------------------------------------------------------------------------
@@ -455,7 +491,22 @@ if ($alreadyRunning -and $script:cachedEp) {
 # identifies the selected EP.
 $skipLiveCapture = $alreadyRunning -and $script:cachedEp -and -not $SkipLaunch
 
-if ($skipLiveCapture) {
+# Also skip when there is nothing that could possibly emit: the packaged app is not
+# installed and we were not asked to wait for a manual launch. Otherwise the script spends
+# its full capture window waiting for an app it has already reported it cannot start --
+# which is the normal case for a developer using only the console or WPF sample.
+$noAppToCapture = -not $SkipLaunch -and -not $alreadyRunning -and
+                  -not (Get-AppxPackage AionInstructPreviewChat -ErrorAction SilentlyContinue)
+
+if ($noAppToCapture) {
+    $msg = 'Live capture skipped -- AionInstructPreview.Chat is not installed, so nothing would emit. '
+    $msg += if ($script:cachedEp) {
+        "EP is already known from the cache above: $($script:cachedEp)."
+    } else {
+        'Run one of the samples, then rerun with -SkipLaunch to capture passively.'
+    }
+    Write-Check INFO $msg
+} elseif ($skipLiveCapture) {
     Write-Check INFO ('Live capture skipped -- EP already reported from cache above. Use -SkipLaunch for a passive live capture, or close the app and rerun for a fresh cold-launch capture.')
 } elseif (-not ($capture = New-Object OdsCapture) -or -not $capture.Start()) {
     Write-Check FAIL ('Could not start ODS capture: ' + $(if ($capture) { $capture.LastError } else { 'capturer type unavailable' }))
@@ -531,16 +582,16 @@ if ($skipLiveCapture) {
 
             switch -Regex ($reason) {
                 '^catalog-certified$' {
-                    Write-Check PASS "SDK chose a Certified $device EP ($ep) -- first launch will spend ~3-5 min on NPU compile, then sub-second per token"
+                    Write-Check PASS "SDK selected $ep for $device -- cold NPU compilation may take several minutes"
                 }
                 '^no-npu-ep-available$' {
-                    Write-Check FAIL ("SDK saw no NPU EP -- falling back to $device. " +
-                        "Load can take 20-30+ min and inference will be very slow. " +
-                        "Install the QNN EP framework package (Snapdragon: MicrosoftCorporationII.WinML.Qualcomm.QNN.EP.*).")
+                    Write-Check FAIL ("SDK found no compatible NPU EP; CPU fallback is not supported. " +
+                        'Verify the catalog provider version and NPU driver: QNN 2.2480.49+, ' +
+                        'OpenVINO 1.8.95+. AMD support is coming soon.')
                 }
                 '^no-catalog$' {
-                    Write-Check FAIL ('SDK could not enumerate the WinML catalog -- falling back to ' + $device + '. ' +
-                        'Indicates WindowsAppRuntime 2 / Microsoft.Windows.AI.MachineLearning.dll is not loading correctly.')
+                    Write-Check FAIL ('SDK could not enumerate the WinML catalog; CPU fallback is not supported. ' +
+                        'Inspect the bundled WinML runtime and reinstall the Aion framework if needed.')
                 }
                 default {
                     Write-Check WARN ("Captured EP decision but reason='$reason' is unrecognized (newer SDK?). EP=$ep Device=$device")

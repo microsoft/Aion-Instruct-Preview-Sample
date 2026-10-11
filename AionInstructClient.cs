@@ -7,7 +7,7 @@ using AionInstructPreview.Chat.Models;
 namespace AionInstructPreview.Chat;
 
 // Bundles the underlying Aion Instruct Preview result with timing metrics collected during
-// the streaming call. TTFT and tok/s are computed off the Progress callback
+// the streaming call. First-update latency and updates/s are computed off the Progress callback
 // stream; see GenerationMetrics for the conventions.
 public sealed record AionGenerationResult(
     LanguageModelResponseResult Response,
@@ -15,7 +15,7 @@ public sealed record AionGenerationResult(
 
 // Thin async wrapper around the AionInstructPreview.Text.LanguageModel runtimeclass.
 // Hides the WinRT projection and Progress-callback mechanics from the
-// viewmodel. Callers should marshal onToken back to the UI thread when needed.
+// viewmodel. Callers should marshal onUpdate back to the UI thread when needed.
 //
 // A AionInstructClient owns one LanguageModelContext that carries the in-process
 // conversation history. Every GenerateAsync routes through that context, so
@@ -48,59 +48,66 @@ public sealed class AionInstructClient : IDisposable
     // Discard the current conversation context and open a fresh one. Use
     // this after a PromptLargerThanContext result, or whenever the user
     // hits "New conversation" in the UI. Cheap — synchronous + ~ms.
-    public void StartNewConversation()
+    //
+    // When systemPrompt is null or empty the model runs under the stack's stock
+    // assistant prompt; otherwise it uses the CreateContext(String) overload, which
+    // mirrors Microsoft.Windows.AI.Text.LanguageModel exactly.
+    public void StartNewConversation(string? systemPrompt = null)
     {
         ThrowIfDisposed();
         var old = _context;
-        _context = _model.CreateContext();
+        _context = string.IsNullOrWhiteSpace(systemPrompt)
+            ? _model.CreateContext()
+            : _model.CreateContext(systemPrompt);
         ((IDisposable)old).Dispose();
     }
 
-    // Runs one prompt against the session context. Each new-token delta
-    // from Aion Instruct Preview invokes onToken; the returned task completes with the
+    // Runs one prompt against the session context. Each new text delta
+    // from Aion Instruct Preview invokes onUpdate; the returned task completes with the
     // final accumulated result. The caller is responsible for cross-thread
-    // marshalling — onToken fires on whatever thread WinRT picks for the
+    // marshalling — onUpdate fires on whatever thread WinRT picks for the
     // Progress callback.
     //
-    // Multi-turn behavior is automatic — the context carries each turn's
-    // prompt + response into the next call.
+    // The SDK manages multi-turn history. Reuse the context after a blocked turn;
+    // do not assume a failed operation left its history unchanged.
     public async Task<AionGenerationResult> GenerateAsync(
         string prompt,
-        Action<string> onToken)
+        Action<string> onUpdate)
     {
         ArgumentNullException.ThrowIfNull(prompt);
-        ArgumentNullException.ThrowIfNull(onToken);
+        ArgumentNullException.ThrowIfNull(onUpdate);
         ThrowIfDisposed();
 
         var stopwatch = Stopwatch.StartNew();
-        long ttftTicks = 0;
-        int tokenCount = 0;
+        long firstUpdateTicks = 0;
+        int updateCount = 0;
 
-        var op = _model.GenerateResponseAsync(_context, prompt);
-        op.Progress = (_, token) =>
+        // Preserve the sample's sampling settings from before options were exposed.
+        var options = new LanguageModelOptions { Temperature = 0.5f, TopP = 0.9f, TopK = 40 };
+        var op = _model.GenerateResponseAsync(_context, prompt, options);
+        op.Progress = (_, delta) =>
         {
-            // First token delta determines time-to-first-token (TTFT).
-            if (tokenCount == 0)
+            if (updateCount == 0)
             {
-                ttftTicks = stopwatch.ElapsedTicks;
+                firstUpdateTicks = stopwatch.ElapsedTicks;
             }
-            tokenCount++;
-            onToken(token);
+            updateCount++;
+            onUpdate(delta);
         };
 
         var response = await op;
         stopwatch.Stop();
 
         double totalMs = stopwatch.Elapsed.TotalMilliseconds;
-        double ttftMs = ttftTicks == 0
-            ? totalMs
-            : ttftTicks * 1000.0 / Stopwatch.Frequency;
-        double decodeMs = totalMs - ttftMs;
-        double? tps = (tokenCount > 1 && decodeMs > 0)
-            ? (tokenCount - 1) * 1000.0 / decodeMs
+        double? firstUpdateMs = updateCount == 0
+            ? null
+            : firstUpdateTicks * 1000.0 / Stopwatch.Frequency;
+        double? afterFirstUpdateMs = totalMs - firstUpdateMs;
+        double? updatesPerSecond = (updateCount > 1 && afterFirstUpdateMs > 0)
+            ? (updateCount - 1) * 1000.0 / afterFirstUpdateMs
             : (double?)null;
 
-        var metrics = new GenerationMetrics(ttftMs, decodeMs, totalMs, tokenCount, tps);
+        var metrics = new GenerationMetrics(firstUpdateMs, afterFirstUpdateMs, totalMs, updateCount, updatesPerSecond);
         return new AionGenerationResult(response, metrics);
     }
 

@@ -4,7 +4,7 @@
 
   This sample declares the framework + Windows App Runtime PackageDependencies
   explicitly below so the manifest is self-describing. The SDK NuGet's targets
-  also inject the Aion Instruct Preview framework + WindowsAppRuntime 1.8
+  also inject the Aion Instruct Preview framework + WindowsAppRuntime 2
   dependencies at build time, but the injector de-dupes by Name, so these
   explicit entries are left untouched (no duplication). A consumer that omits
   them gets them from the injector instead.
@@ -22,14 +22,20 @@
     <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.22621.0" MaxVersionTested="10.0.26100.0" />
     <!--
       Declared explicitly for clarity. AionInstructPreview.Text.Framework.targets
-      injects the same framework + WindowsAppRuntime 1.8 entries at build time,
-      but de-dupes by Name, so it leaves these as-is. WindowsAppRuntime 2 is a
-      WinUI 3 / Windows App SDK dependency and is not injected by the SDK.
+      injects the same two entries at build time and de-dupes by Name, so keeping
+      them here in their final form means the build has nothing to rewrite.
+
+      Both are required:
+        - the Aion Instruct Preview framework carries the model, muffinapi and the
+          SDK's own WinML + ONNX Runtime;
+        - WindowsAppRuntime 2 is the WinUI 3 / Windows App SDK dependency.
+
+      There is deliberately no WindowsAppRuntime 1.8 entry. It used to supply the
+      WinML stack the model ran on; the framework now ships its own WinML and ORT,
+      and the SDK's targets actively remove a 1.8 dependency if it finds one.
     -->
-    <PackageDependency Name="Microsoft.AionInstructPreview.Framework.1.0" MinVersion="1.0.0.0" Publisher="CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US" />
+    <PackageDependency Name="Microsoft.AionInstructPreview.Framework.1.0" MinVersion="1.0.0.3" Publisher="CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US" />
     <PackageDependency Name="Microsoft.WindowsAppRuntime.2" MinVersion="2.0.1.0" Publisher="CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US" />
-    <!-- WindowsAppRuntime 1.8 provides the WinML stack the on-device model runs on. -->
-    <PackageDependency Name="Microsoft.WindowsAppRuntime.1.8" MinVersion="8000.836.2153.0" Publisher="CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US" />
   </Dependencies>
   <Resources>
     <Resource Language="en-US" />

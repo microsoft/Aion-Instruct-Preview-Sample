@@ -8,6 +8,8 @@ using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using AionInstructPreview.Chat.Models;
 using global::AionInstructPreview.Text;
+using global::AionInstructPreview.Imaging;
+using Windows.Storage;
 
 namespace AionInstructPreview.Chat.ViewModels;
 
@@ -22,12 +24,20 @@ public sealed class ChatViewModel : INotifyPropertyChanged, IDisposable
 {
     private readonly DispatcherQueue _dispatcher;
     private AionInstructClient? _aionClient;
+    private AionImageDescriptionClient? _descriptionClient;
 
     private ModelState _state = ModelState.Loading;
     private string _promptText = string.Empty;
     private string? _errorMessage;
     private bool _isContextFull;
     private bool _disposed;
+    private string _systemPrompt = string.Empty;
+
+    // The system prompt baked into the live LanguageModelContext. A context is immutable
+    // once created, so a changed prompt only takes effect on the next CreateContext.
+    private string _appliedSystemPrompt = string.Empty;
+    private bool _hasConversationTurns;
+    private ImageDescriptionKind _selectedImageKind = ImageDescriptionKind.DetailedDescription;
 
     public ChatViewModel()
     {
@@ -36,6 +46,7 @@ public sealed class ChatViewModel : INotifyPropertyChanged, IDisposable
                 "ChatViewModel must be constructed on a UI thread that has a DispatcherQueue.");
 
         Messages = new ObservableCollection<Message>();
+        ImageMessages = new ObservableCollection<Message>();
         SendCommand = new RelayCommand(_ => _ = SendAsync(), _ => CanSend);
         NewConversationCommand = new RelayCommand(
             _ => StartNewConversation(),
@@ -46,8 +57,59 @@ public sealed class ChatViewModel : INotifyPropertyChanged, IDisposable
 
     public ObservableCollection<Message> Messages { get; }
 
+    // Image description keeps its own transcript. The two features are independent:
+    // describing an image neither reads nor extends the chat conversation context.
+    public ObservableCollection<Message> ImageMessages { get; }
+
+    // Applied when a new conversation is started, via CreateContext(String systemPrompt).
+    // Empty means "use the stack's default assistant prompt".
+    public string SystemPrompt
+    {
+        get => _systemPrompt;
+        set
+        {
+            if (_systemPrompt == value) return;
+            _systemPrompt = value;
+            Raise();
+            Raise(nameof(SystemPromptPendingVisibility));
+        }
+    }
+
+    // Shown when the typed system prompt differs from the one the live context was
+    // built with AND there is history worth preserving. Before the first turn the
+    // prompt is applied silently on the next send, so no nag is needed.
+    public Visibility SystemPromptPendingVisibility =>
+        (_systemPrompt != _appliedSystemPrompt && _hasConversationTurns)
+            ? Visibility.Visible : Visibility.Collapsed;
+
     public ICommand SendCommand { get; }
     public ICommand NewConversationCommand { get; }
+
+    // The four description styles the SDK supports, in enum order. Bound to the
+    // ComboBox next to the attach-image button.
+    public ImageDescriptionKind[] ImageKinds { get; } =
+    {
+        ImageDescriptionKind.BriefDescription,
+        ImageDescriptionKind.DetailedDescription,
+        ImageDescriptionKind.DiagramDescription,
+        ImageDescriptionKind.AccessibleDescription,
+    };
+
+    public ImageDescriptionKind SelectedImageKind
+    {
+        get => _selectedImageKind;
+        set
+        {
+            if (_selectedImageKind == value) return;
+            _selectedImageKind = value;
+            Raise();
+        }
+    }
+
+    // The vision models load lazily on first use, so the attach button stays
+    // enabled whenever the model is idle. Describing sets State to Generating,
+    // which also disables the chat input -- both features share one model.
+    public bool DescribeEnabled => _state == ModelState.Ready;
 
     public string PromptText
     {
@@ -78,6 +140,7 @@ public sealed class ChatViewModel : INotifyPropertyChanged, IDisposable
             Raise(nameof(SendEnabled));
             Raise(nameof(CanStartNewConversation));
             Raise(nameof(NewConversationButtonEnabled));
+            Raise(nameof(DescribeEnabled));
             (SendCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (NewConversationCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
@@ -142,7 +205,13 @@ public sealed class ChatViewModel : INotifyPropertyChanged, IDisposable
     {
         try
         {
-            _aionClient = await AionInstructClient.CreateAsync().ConfigureAwait(true);
+            var client = await AionInstructClient.CreateAsync().ConfigureAwait(true);
+            if (_disposed)
+            {
+                client.Dispose();
+                return;
+            }
+            _aionClient = client;
             State = ModelState.Ready;
             Raise(nameof(CanStartNewConversation));
             Raise(nameof(NewConversationButtonEnabled));
@@ -151,8 +220,8 @@ public sealed class ChatViewModel : INotifyPropertyChanged, IDisposable
         catch (Exception ex)
         {
             ErrorMessage =
-                $"Aion Instruct Preview couldn't load.{Environment.NewLine}{ex.Message}{Environment.NewLine}" +
-                "Make sure the Aion Instruct Preview framework MSIX is installed -- run Bootstrap.ps1, or scripts\\Diagnose-AionInstructPreview.ps1 to check every prerequisite.";
+                $"Aion Instruct Preview couldn't load (0x{ex.HResult:X8}).{Environment.NewLine}" +
+                "Make sure the Aion framework and a compatible NPU execution provider are installed -- run Bootstrap.ps1, or scripts\\Diagnose-AionInstructPreview.ps1 to check every prerequisite.";
             State = ModelState.Error;
         }
     }
@@ -168,20 +237,35 @@ public sealed class ChatViewModel : INotifyPropertyChanged, IDisposable
         // Snapshot + clear before the await so the input box empties immediately.
         PromptText = string.Empty;
 
-        Messages.Add(new Message(MessageRole.User, prompt, MessageStatus.Complete));
         var aionMessage = new Message(MessageRole.Aion, string.Empty, MessageStatus.Streaming);
-        Messages.Add(aionMessage);
-
         State = ModelState.Generating;
 
         try
         {
+            // Apply the first system prompt inside the error boundary: it can be blocked.
+            if (_systemPrompt != _appliedSystemPrompt && !_hasConversationTurns)
+            {
+                _aionClient.StartNewConversation(_systemPrompt);
+                _appliedSystemPrompt = _systemPrompt;
+                Raise(nameof(SystemPromptPendingVisibility));
+            }
+
+            Messages.Add(new Message(MessageRole.User, prompt, MessageStatus.Complete));
+            Messages.Add(aionMessage);
+            _hasConversationTurns = true;
+
             var generation = await _aionClient.GenerateAsync(
                 prompt,
-                onToken: token =>
+                onUpdate: delta =>
                 {
                     // Progress fires on a background thread; marshal to UI.
-                    _dispatcher.TryEnqueue(() => aionMessage.Text += token);
+                    _dispatcher.TryEnqueue(() =>
+                    {
+                        if (aionMessage.Status == MessageStatus.Streaming)
+                        {
+                            aionMessage.Text += delta;
+                        }
+                    });
                 }).ConfigureAwait(true);
 
             var result = generation.Response;
@@ -201,8 +285,8 @@ public sealed class ChatViewModel : INotifyPropertyChanged, IDisposable
                 case LanguageModelResponseStatus.PromptLargerThanContext:
                     // The conversation has filled Aion Instruct Preview's context window.
                     // Surface this as its own UX, distinct from Error — the
-                    // user can recover with "New conversation". Any partial
-                    // text Aion Instruct Preview produced before overflow is preserved.
+                    // user can recover with "New conversation".
+                    aionMessage.Text = string.Empty;
                     aionMessage.StatusDetail =
                         "This conversation reached Aion Instruct Preview's context limit. " +
                         "Start a new conversation to keep chatting.";
@@ -210,22 +294,161 @@ public sealed class ChatViewModel : INotifyPropertyChanged, IDisposable
                     IsContextFull = true;
                     break;
 
+                case LanguageModelResponseStatus.PromptBlockedByContentModeration:
+                    SetFailure(aionMessage, "The prompt was blocked by content moderation. Try a different prompt.");
+                    break;
+
+                case LanguageModelResponseStatus.ResponseBlockedByContentModeration:
+                    SetFailure(aionMessage, "The response was blocked by content moderation. No final response is available.");
+                    break;
+
+                case LanguageModelResponseStatus.BlockedByPolicy:
+                    SetFailure(aionMessage, "This request was blocked by the preview's content policy.");
+                    break;
+
                 default:
-                    aionMessage.StatusDetail = $"Aion Instruct Preview returned Status={result.Status}.";
-                    aionMessage.Status = MessageStatus.Error;
+                    SetFailure(aionMessage, "Generation could not complete. This is an operational failure, not a moderation decision.");
                     break;
             }
         }
         catch (Exception ex)
         {
-            aionMessage.StatusDetail = ex.Message;
-            aionMessage.Status = MessageStatus.Error;
+            if (!Messages.Contains(aionMessage))
+            {
+                PromptText = prompt;
+                Messages.Add(aionMessage);
+            }
+            SetFailure(aionMessage, FailureDetail(ex));
         }
         finally
         {
             State = ModelState.Ready;
         }
     }
+
+    // Describes a user-picked image and appends both the thumbnail entry and the
+    // generated description to the transcript.
+    //
+    // The image description pipeline is independent of the chat context: it does not
+    // read or extend the conversation history, and it mirrors the inbox
+    // ImageDescriptionGenerator API exactly.
+    public async Task DescribeImageAsync(StorageFile file)
+    {
+        if (_disposed || file is null) return;
+        if (!DescribeEnabled) return;
+
+        // Set before the first await so a second click can't slip through.
+        State = ModelState.Generating;
+
+        var kind = _selectedImageKind;
+
+        var userMessage = new Message(
+            MessageRole.User,
+            $"Describe this image ({KindLabel(kind)})",
+            MessageStatus.Complete);
+
+        try
+        {
+            var bitmap = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
+            using (var thumbStream = await file.OpenReadAsync())
+            {
+                await bitmap.SetSourceAsync(thumbStream);
+            }
+            userMessage.Image = bitmap;
+        }
+        catch (Exception)
+        {
+            // A thumbnail is a nicety; a decode failure here must not block description.
+        }
+
+        if (_disposed) return;
+        ImageMessages.Add(userMessage);
+
+        var aionMessage = new Message(MessageRole.Aion, string.Empty, MessageStatus.Streaming);
+        ImageMessages.Add(aionMessage);
+
+        try
+        {
+            if (_descriptionClient is null)
+            {
+                aionMessage.StatusDetail =
+                    "Loading the vision models (SigLIP2 + projector). First-run cache compilation may take several minutes.";
+                var client = await AionImageDescriptionClient.CreateAsync().ConfigureAwait(true);
+                if (_disposed)
+                {
+                    client.Dispose();
+                    return;
+                }
+                _descriptionClient = client;
+                aionMessage.StatusDetail = null;
+            }
+
+            if (_disposed) return;
+            var generation = await _descriptionClient.DescribeAsync(
+                file,
+                kind,
+                onUpdate: delta =>
+                {
+                    // Progress reports text deltas, exactly like the chat path
+                    // (DescriptionSink::OnProcessingUpdate forwards only the new text).
+                    // Append, don't assign.
+                    _dispatcher.TryEnqueue(() =>
+                    {
+                        if (!_disposed && aionMessage.Status == MessageStatus.Streaming)
+                        {
+                            aionMessage.Text += delta;
+                        }
+                    });
+                }).ConfigureAwait(true);
+
+            if (_disposed) return;
+            var result = generation.Response;
+            aionMessage.Metrics = generation.Metrics;
+
+            if (result.Status == ImageDescriptionResultStatus.Complete)
+            {
+                if (aionMessage.Text != result.Description)
+                {
+                    aionMessage.Text = result.Description;
+                }
+                aionMessage.Status = MessageStatus.Complete;
+            }
+            else
+            {
+                SetFailure(aionMessage, result.Status switch
+                {
+                    ImageDescriptionResultStatus.ImageBlockedByContentModeration =>
+                        "The image was blocked by content moderation.",
+                    ImageDescriptionResultStatus.TextInImageBlockedByContentModeration =>
+                        "Text in the image was blocked by content moderation.",
+                    ImageDescriptionResultStatus.DescriptionTextBlockedByContentModeration =>
+                        "The description was blocked by content moderation. No final description is available.",
+                    _ => "Image description could not complete. This is an operational failure, not a moderation decision.",
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            if (_disposed) return;
+            SetFailure(aionMessage, FailureDetail(ex));
+        }
+        finally
+        {
+            if (!_disposed)
+            {
+                State = ModelState.Ready;
+            }
+        }
+    }
+
+    private static string KindLabel(ImageDescriptionKind kind) => kind switch
+    {
+        ImageDescriptionKind.BriefDescription => "brief",
+        ImageDescriptionKind.DetailedDescription => "detailed",
+        ImageDescriptionKind.DiagramDescription => "diagram",
+        ImageDescriptionKind.AccessibleDescription => "accessible",
+        _ => kind.ToString(),
+    };
 
     // Discard the in-process LanguageModelContext (and its accumulated
     // conversation history) and open a fresh one. Clears the transcript
@@ -235,10 +458,33 @@ public sealed class ChatViewModel : INotifyPropertyChanged, IDisposable
         if (!CanStartNewConversation) return;
         if (_aionClient == null) return;
 
-        _aionClient.StartNewConversation();
-        Messages.Clear();
-        IsContextFull = false;
+        try
+        {
+            _aionClient.StartNewConversation(_systemPrompt);
+            _appliedSystemPrompt = _systemPrompt;
+            _hasConversationTurns = false;
+            Messages.Clear();
+            IsContextFull = false;
+            Raise(nameof(SystemPromptPendingVisibility));
+        }
+        catch (Exception ex)
+        {
+            Messages.Add(new Message(MessageRole.Aion, string.Empty, MessageStatus.Error, FailureDetail(ex)));
+        }
     }
+
+    private static void SetFailure(Message message, string detail)
+    {
+        // Queued UI callbacks check this status before appending any more text.
+        message.Status = MessageStatus.Error;
+        message.Text = string.Empty;
+        message.StatusDetail = detail;
+    }
+
+    private static string FailureDetail(Exception exception) =>
+        exception.HResult == unchecked((int)0x8A1F0202)
+            ? "Content moderation blocked this request or system prompt. Try different input."
+            : $"The operation failed (0x{exception.HResult:X8}). This is not a moderation decision.";
 
     public void Dispose()
     {
@@ -246,6 +492,8 @@ public sealed class ChatViewModel : INotifyPropertyChanged, IDisposable
         _disposed = true;
         _aionClient?.Dispose();
         _aionClient = null;
+        _descriptionClient?.Dispose();
+        _descriptionClient = null;
     }
 
     private void Raise([CallerMemberName] string? name = null) =>

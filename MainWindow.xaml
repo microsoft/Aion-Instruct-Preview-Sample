@@ -7,6 +7,58 @@
     xmlns:controls="using:AionInstructPreview.Chat.Controls">
 
     <Grid>
+        <Grid.Resources>
+            <!-- One bubble template, shared by the chat and image-description transcripts.
+                 Both are ObservableCollection<Message>, so the only difference between the
+                 two views is which collection feeds them. Lives on the root Grid rather than
+                 the Window because WinUI 3's Window is not a FrameworkElement and has no
+                 Resources collection. -->
+            <DataTemplate x:Key="MessageTemplate" x:DataType="models:Message">
+                <Border
+                    HorizontalAlignment="{x:Bind BubbleAlignment}"
+                    MaxWidth="560"
+                    Padding="14,10"
+                    CornerRadius="14"
+                    Margin="0,4"
+                    Background="{x:Bind BubbleBrush}"
+                    BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                    BorderThickness="1">
+                    <StackPanel>
+                        <Image
+                            Source="{x:Bind Image, Mode=OneWay}"
+                            Visibility="{x:Bind ImageVisibility, Mode=OneWay}"
+                            MaxHeight="220"
+                            Stretch="Uniform"
+                            HorizontalAlignment="Left"
+                            Margin="0,0,0,8" />
+                        <controls:TypingIndicator
+                            Visibility="{x:Bind TypingVisibility, Mode=OneWay}" />
+                        <TextBlock
+                            Text="{x:Bind Text, Mode=OneWay}"
+                            Visibility="{x:Bind TextVisibility, Mode=OneWay}"
+                            TextWrapping="Wrap"
+                            IsTextSelectionEnabled="True"
+                            Foreground="{x:Bind ForegroundBrush}" />
+                        <TextBlock
+                            Text="{x:Bind MetricsText, Mode=OneWay}"
+                            Visibility="{x:Bind MetricsVisibility, Mode=OneWay}"
+                            FontSize="11"
+                            Margin="0,4,0,0"
+                            Opacity="0.7"
+                            Foreground="{x:Bind ForegroundBrush}" />
+                        <TextBlock
+                            Text="{x:Bind StatusDetail, Mode=OneWay}"
+                            Visibility="{x:Bind StatusDetailVisibility, Mode=OneWay}"
+                            FontStyle="Italic"
+                            FontSize="12"
+                            TextWrapping="Wrap"
+                            Margin="0,4,0,0"
+                            Foreground="{x:Bind StatusDetailBrush, Mode=OneWay}" />
+                    </StackPanel>
+                </Border>
+            </DataTemplate>
+        </Grid.Resources>
+
         <Grid.RowDefinitions>
             <RowDefinition Height="40" />
             <RowDefinition Height="*" />
@@ -14,8 +66,7 @@
 
         <!-- Custom title bar. The rightmost spacer column extends under the
              system caption buttons (min/max/close) and stays empty so they
-             don't collide with our content. New conversation moved to the
-             bottom-right of the input row. -->
+             don't collide with our content. -->
         <Grid
             x:Name="AppTitleBar"
             Grid.Row="0"
@@ -36,179 +87,269 @@
             <TextBlock
                 x:Name="AppTitleText"
                 Grid.Column="1"
-                Text="Aion Instruct Preview Chat"
+                Text="Aion Instruct Preview"
                 VerticalAlignment="Center"
                 Style="{ThemeResource CaptionTextBlockStyle}"
                 FontWeight="SemiBold" />
         </Grid>
 
-        <!-- Main content area. Loading / error overlays stack on top of the chat. -->
+        <!-- Main content area. Loading / error overlays stack on top. -->
         <Grid Grid.Row="1">
 
-            <Grid x:Name="ChatRoot" Visibility="{x:Bind ViewModel.ChatVisibility, Mode=OneWay}">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="*" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
+            <!-- The two features are separate APIs with separate state, so they get
+                 separate top-level views rather than sharing one crowded input row.
+                 Chat owns a LanguageModelContext and accumulates history; image
+                 description is stateless per call. -->
+            <NavigationView
+                x:Name="MainNav"
+                Visibility="{x:Bind ViewModel.ChatVisibility, Mode=OneWay}"
+                PaneDisplayMode="Top"
+                IsSettingsVisible="False"
+                IsBackButtonVisible="Collapsed"
+                SelectionChanged="OnNavSelectionChanged">
+                <NavigationView.MenuItems>
+                    <NavigationViewItem Content="Chat" Tag="chat" IsSelected="True">
+                        <NavigationViewItem.Icon>
+                            <FontIcon Glyph="&#xE8BD;" />
+                        </NavigationViewItem.Icon>
+                    </NavigationViewItem>
+                    <NavigationViewItem Content="Describe image" Tag="image">
+                        <NavigationViewItem.Icon>
+                            <FontIcon Glyph="&#xEB9F;" />
+                        </NavigationViewItem.Icon>
+                    </NavigationViewItem>
+                </NavigationView.MenuItems>
 
-                <ScrollViewer
-                    Grid.Row="0"
-                    x:Name="TranscriptScroller"
-                    Padding="20,12,20,8"
-                    VerticalScrollBarVisibility="Auto">
-                    <ItemsControl ItemsSource="{x:Bind ViewModel.Messages, Mode=OneWay}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="models:Message">
-                                <Border
-                                    HorizontalAlignment="{x:Bind BubbleAlignment}"
-                                    MaxWidth="560"
-                                    Padding="14,10"
-                                    CornerRadius="14"
-                                    Margin="0,4"
-                                    Background="{x:Bind BubbleBrush}"
-                                    BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
-                                    BorderThickness="1">
-                                    <StackPanel>
-                                        <controls:TypingIndicator
-                                            Visibility="{x:Bind TypingVisibility, Mode=OneWay}" />
-                                        <TextBlock
-                                            Text="{x:Bind Text, Mode=OneWay}"
-                                            Visibility="{x:Bind TextVisibility, Mode=OneWay}"
-                                            TextWrapping="Wrap"
-                                            IsTextSelectionEnabled="True"
-                                            Foreground="{x:Bind ForegroundBrush}" />
-                                        <TextBlock
-                                            Text="{x:Bind MetricsText, Mode=OneWay}"
-                                            Visibility="{x:Bind MetricsVisibility, Mode=OneWay}"
-                                            FontSize="11"
-                                            Margin="0,4,0,0"
-                                            Opacity="0.7"
-                                            Foreground="{x:Bind ForegroundBrush}" />
-                                        <TextBlock
-                                            Text="{x:Bind StatusDetail, Mode=OneWay}"
-                                            Visibility="{x:Bind ErrorVisibility, Mode=OneWay}"
-                                            FontStyle="Italic"
-                                            FontSize="12"
-                                            Margin="0,4,0,0"
-                                            Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </ScrollViewer>
+                <Grid>
 
-                <StackPanel
-                    Grid.Row="1"
-                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                    BorderThickness="0,1,0,0">
+                    <!-- ============================ CHAT ============================ -->
+                    <Grid x:Name="ChatView">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
 
-                    <!-- Context-full banner. Shown only when Aion Instruct Preview returned
-                         PromptLargerThanContext on the last turn. Primary
-                         action: start a new conversation. Disables the input
-                         (ViewModel.InputEnabled is gated on !IsContextFull)
-                         so the user can't try to send another prompt into a
-                         full context. -->
-                    <Grid
-                        x:Name="ContextFullBanner"
-                        Visibility="{x:Bind ViewModel.ContextFullBannerVisibility, Mode=OneWay}"
-                        Padding="20,12"
-                        Background="{ThemeResource InfoBarInformationalSeverityBackgroundBrush}">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <FontIcon
-                            Grid.Column="0"
-                            FontFamily="{ThemeResource SymbolThemeFontFamily}"
-                            Glyph="&#xE946;"
-                            FontSize="16"
-                            VerticalAlignment="Center"
-                            Margin="0,0,12,0" />
-                        <TextBlock
-                            Grid.Column="1"
-                            Text="This conversation reached Aion Instruct Preview's context limit. Start a new conversation to keep chatting."
-                            TextWrapping="Wrap"
-                            VerticalAlignment="Center" />
-                        <Button
-                            Grid.Column="2"
-                            Style="{ThemeResource AccentButtonStyle}"
-                            Command="{x:Bind ViewModel.NewConversationCommand, Mode=OneWay}"
-                            IsEnabled="{x:Bind ViewModel.NewConversationButtonEnabled, Mode=OneWay}"
-                            Margin="12,0,0,0">
-                            <StackPanel Orientation="Horizontal" Spacing="6">
+                        <ScrollViewer
+                            Grid.Row="0"
+                            x:Name="TranscriptScroller"
+                            Padding="20,12,20,8"
+                            VerticalScrollBarVisibility="Auto">
+                            <ItemsControl
+                                ItemsSource="{x:Bind ViewModel.Messages, Mode=OneWay}"
+                                ItemTemplate="{StaticResource MessageTemplate}" />
+                        </ScrollViewer>
+
+                        <StackPanel
+                            Grid.Row="1"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="0,1,0,0">
+
+                            <!-- Context-full banner. Shown only when Aion Instruct Preview
+                                 returned PromptLargerThanContext on the last turn. Disables
+                                 the input so the user can't send into a full context. -->
+                            <Grid
+                                x:Name="ContextFullBanner"
+                                Visibility="{x:Bind ViewModel.ContextFullBannerVisibility, Mode=OneWay}"
+                                Padding="20,12"
+                                Background="{ThemeResource InfoBarInformationalSeverityBackgroundBrush}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
                                 <FontIcon
+                                    Grid.Column="0"
                                     FontFamily="{ThemeResource SymbolThemeFontFamily}"
-                                    Glyph="&#xE8BB;"
-                                    FontSize="14" />
-                                <TextBlock Text="New conversation" />
-                            </StackPanel>
-                        </Button>
+                                    Glyph="&#xE946;"
+                                    FontSize="16"
+                                    VerticalAlignment="Center"
+                                    Margin="0,0,12,0" />
+                                <TextBlock
+                                    Grid.Column="1"
+                                    Text="This conversation reached Aion Instruct Preview's context limit. Start a new conversation to keep chatting."
+                                    TextWrapping="Wrap"
+                                    VerticalAlignment="Center" />
+                                <Button
+                                    Grid.Column="2"
+                                    Style="{ThemeResource AccentButtonStyle}"
+                                    Command="{x:Bind ViewModel.NewConversationCommand, Mode=OneWay}"
+                                    IsEnabled="{x:Bind ViewModel.NewConversationButtonEnabled, Mode=OneWay}"
+                                    Margin="12,0,0,0">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon
+                                            FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                            Glyph="&#xE8BB;"
+                                            FontSize="14" />
+                                        <TextBlock Text="New conversation" />
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+
+                            <!-- System prompt. Collapsed by default so it doesn't crowd the
+                                 input. Takes effect on the next New conversation, because it
+                                 is passed to CreateContext and a context is immutable once
+                                 created. -->
+                            <Expander
+                                Margin="20,8,20,0"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Stretch">
+                                <Expander.Header>
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <FontIcon
+                                            FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                            Glyph="&#xE713;"
+                                            FontSize="14" />
+                                        <TextBlock Text="System prompt" />
+                                    </StackPanel>
+                                </Expander.Header>
+                                <StackPanel Spacing="8">
+                                    <TextBox
+                                        PlaceholderText="e.g. You are a terse assistant. Answer in one sentence."
+                                        Text="{x:Bind ViewModel.SystemPrompt, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        IsEnabled="{x:Bind ViewModel.NewConversationButtonEnabled, Mode=OneWay}"
+                                        AcceptsReturn="True"
+                                        TextWrapping="Wrap"
+                                        MinHeight="60"
+                                        MaxHeight="120" />
+                                    <TextBlock
+                                        Text="Applied when you start a new conversation. Leave empty to use the model's default assistant prompt."
+                                        FontSize="12"
+                                        Opacity="0.7"
+                                        TextWrapping="Wrap" />
+                                    <InfoBar
+                                        IsOpen="True"
+                                        IsClosable="False"
+                                        Severity="Informational"
+                                        Visibility="{x:Bind ViewModel.SystemPromptPendingVisibility, Mode=OneWay}"
+                                        Message="This conversation is still using the previous system prompt. Start a new conversation to apply the change." />
+                                </StackPanel>
+                            </Expander>
+
+                            <Grid Padding="20,8,20,16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <TextBox
+                                    x:Name="PromptBox"
+                                    Grid.Column="0"
+                                    PlaceholderText="Type a message. Enter to send, Shift+Enter for a new line…"
+                                    Text="{x:Bind ViewModel.PromptText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                    IsEnabled="{x:Bind ViewModel.InputEnabled, Mode=OneWay}"
+                                    AcceptsReturn="True"
+                                    TextWrapping="Wrap"
+                                    MinHeight="40"
+                                    MaxHeight="160"
+                                    VerticalAlignment="Bottom"
+                                    Margin="0,0,8,0" />
+
+                                <Button
+                                    x:Name="SendButton"
+                                    Grid.Column="1"
+                                    Style="{ThemeResource AccentButtonStyle}"
+                                    Command="{x:Bind ViewModel.SendCommand, Mode=OneWay}"
+                                    IsEnabled="{x:Bind ViewModel.SendEnabled, Mode=OneWay}"
+                                    VerticalAlignment="Bottom"
+                                    Height="40"
+                                    Width="40"
+                                    Padding="0"
+                                    ToolTipService.ToolTip="Send (Enter)">
+                                    <FontIcon
+                                        FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                        Glyph="&#xE724;"
+                                        FontSize="16" />
+                                </Button>
+
+                                <Button
+                                    x:Name="NewConversationButton"
+                                    Grid.Column="2"
+                                    Command="{x:Bind ViewModel.NewConversationCommand, Mode=OneWay}"
+                                    IsEnabled="{x:Bind ViewModel.NewConversationButtonEnabled, Mode=OneWay}"
+                                    VerticalAlignment="Bottom"
+                                    Height="40"
+                                    Width="40"
+                                    Padding="0"
+                                    Margin="8,0,0,0"
+                                    ToolTipService.ToolTip="Start a new conversation (clear history)">
+                                    <FontIcon
+                                        FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                        Glyph="&#xE8BB;"
+                                        FontSize="14" />
+                                </Button>
+                            </Grid>
+                        </StackPanel>
                     </Grid>
 
-                    <Grid Padding="20,8,20,16">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
+                    <!-- ====================== IMAGE DESCRIPTION ====================== -->
+                    <Grid x:Name="ImageView" Visibility="Collapsed">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
 
-                        <TextBox
-                            x:Name="PromptBox"
-                            Grid.Column="0"
-                            PlaceholderText="Type a message. Enter to send, Shift+Enter for a new line…"
-                            Text="{x:Bind ViewModel.PromptText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                            IsEnabled="{x:Bind ViewModel.InputEnabled, Mode=OneWay}"
-                            AcceptsReturn="True"
-                            TextWrapping="Wrap"
-                            MinHeight="40"
-                            MaxHeight="160"
-                            VerticalAlignment="Bottom"
-                            Margin="0,0,8,0" />
+                        <ScrollViewer
+                            Grid.Row="0"
+                            x:Name="ImageTranscriptScroller"
+                            Padding="20,12,20,8"
+                            VerticalScrollBarVisibility="Auto">
+                            <ItemsControl
+                                ItemsSource="{x:Bind ViewModel.ImageMessages, Mode=OneWay}"
+                                ItemTemplate="{StaticResource MessageTemplate}" />
+                        </ScrollViewer>
 
-                        <Button
-                            x:Name="SendButton"
-                            Grid.Column="1"
-                            Style="{ThemeResource AccentButtonStyle}"
-                            Command="{x:Bind ViewModel.SendCommand, Mode=OneWay}"
-                            IsEnabled="{x:Bind ViewModel.SendEnabled, Mode=OneWay}"
-                            VerticalAlignment="Bottom"
-                            Height="40"
-                            Width="40"
-                            Padding="0"
-                            ToolTipService.ToolTip="Send (Enter)">
-                            <FontIcon
-                                FontFamily="{ThemeResource SymbolThemeFontFamily}"
-                                Glyph="&#xE724;"
-                                FontSize="16" />
-                        </Button>
+                        <StackPanel
+                            Grid.Row="1"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="0,1,0,0">
 
-                        <!-- "New conversation" button. Always-available
-                             affordance to discard the in-process
-                             LanguageModelContext and start fresh. Also the
-                             primary recovery from PromptLargerThanContext.
-                             Lives next to Send so it stays out of the
-                             system caption-button zone in the title bar. -->
-                        <Button
-                            x:Name="NewConversationButton"
-                            Grid.Column="2"
-                            Command="{x:Bind ViewModel.NewConversationCommand, Mode=OneWay}"
-                            IsEnabled="{x:Bind ViewModel.NewConversationButtonEnabled, Mode=OneWay}"
-                            VerticalAlignment="Bottom"
-                            Height="40"
-                            Width="40"
-                            Padding="0"
-                            Margin="8,0,0,0"
-                            ToolTipService.ToolTip="Start a new conversation (clear history)">
-                            <FontIcon
-                                FontFamily="{ThemeResource SymbolThemeFontFamily}"
-                                Glyph="&#xE8BB;"
-                                FontSize="14" />
-                        </Button>
+                            <TextBlock
+                                Margin="20,12,20,0"
+                                FontSize="12"
+                                Opacity="0.7"
+                                TextWrapping="Wrap"
+                                Text="Pick an image and Aion Instruct Preview will describe it. The first description loads the vision models and may compile caches for several minutes. Image description is independent of the chat conversation." />
+
+                            <Grid Padding="20,8,20,16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <ComboBox
+                                    x:Name="ImageKindBox"
+                                    Grid.Column="0"
+                                    Header="Description style"
+                                    ItemsSource="{x:Bind ViewModel.ImageKinds}"
+                                    SelectedItem="{x:Bind ViewModel.SelectedImageKind, Mode=TwoWay}"
+                                    IsEnabled="{x:Bind ViewModel.DescribeEnabled, Mode=OneWay}"
+                                    MinWidth="190"
+                                    Margin="0,0,12,0" />
+
+                                <Button
+                                    x:Name="AttachImageButton"
+                                    Grid.Column="1"
+                                    Style="{ThemeResource AccentButtonStyle}"
+                                    Click="OnAttachImageClick"
+                                    IsEnabled="{x:Bind ViewModel.DescribeEnabled, Mode=OneWay}"
+                                    Height="32"
+                                    VerticalAlignment="Bottom">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <FontIcon
+                                            FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                            Glyph="&#xEB9F;"
+                                            FontSize="14" />
+                                        <TextBlock Text="Choose image…" />
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+                        </StackPanel>
                     </Grid>
-                </StackPanel>
-            </Grid>
+
+                </Grid>
+            </NavigationView>
 
             <Border
                 x:Name="LoadingOverlay"
@@ -224,7 +365,7 @@
                         Style="{ThemeResource SubtitleTextBlockStyle}"
                         HorizontalAlignment="Center" />
                     <TextBlock
-                        Text="First launch can take 4–5 minutes while the model compiles for your NPU. This is expected — please don't close the window."
+                        Text="First launch can take several minutes while the model compiles for your NPU. This is expected — please don't close the window."
                         TextWrapping="Wrap"
                         MaxWidth="400"
                         Opacity="0.7"

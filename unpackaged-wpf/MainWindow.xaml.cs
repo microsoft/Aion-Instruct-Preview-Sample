@@ -31,7 +31,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             StatusText.Text = "Failed to load the model.";
-            MessageBox.Show(ex.Message, "Aion Instruct Preview: model load failed",
+            MessageBox.Show($"Model loading failed (0x{ex.HResult:X8}).", "Aion Instruct Preview: model load failed",
                 MessageBoxButton.OK, MessageBoxImage.Error);
             return;
         }
@@ -70,27 +70,56 @@ public partial class MainWindow : Window
         SetBusy(true);
         AppendLine($"You: {prompt}");
         Append("Aion Instruct Preview: ");
+        int responseStart = ConversationBox.Text.Length;
+        bool acceptingUpdates = true;
 
         try
         {
-            var op = _model.GenerateResponseAsync(_context, prompt);
+            // Preserve the sample's sampling settings from before options were exposed.
+            var options = new LanguageModelOptions { Temperature = 0.5f, TopP = 0.9f, TopK = 40 };
+            var op = _model.GenerateResponseAsync(_context, prompt, options);
 
-            // Progress delivers token deltas on a background thread; marshal each
+            // Progress delivers text deltas on a background thread; marshal each
             // delta back to the UI thread before updating the transcript.
-            op.Progress = (_, delta) => Dispatcher.Invoke(() => Append(delta));
+            op.Progress = (_, delta) => Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (acceptingUpdates)
+                {
+                    Append(delta);
+                }
+            }));
 
             LanguageModelResponseResult result = await op;
-
-            AppendLine(string.Empty);
-            if (result.Status != LanguageModelResponseStatus.Complete)
+            acceptingUpdates = false;
+            ConversationBox.Text = ConversationBox.Text[..responseStart];
+            if (result.Status == LanguageModelResponseStatus.Complete)
             {
-                AppendLine($"[status: {result.Status}]");
+                AppendLine(result.Text);
+            }
+            else
+            {
+                AppendLine(result.Status switch
+                {
+                    LanguageModelResponseStatus.PromptBlockedByContentModeration =>
+                        "[The prompt was blocked by content moderation. Try a different prompt.]",
+                    LanguageModelResponseStatus.ResponseBlockedByContentModeration =>
+                        "[The response was blocked by content moderation. No final response is available.]",
+                    LanguageModelResponseStatus.BlockedByPolicy =>
+                        "[This request was blocked by the preview's content policy.]",
+                    LanguageModelResponseStatus.PromptLargerThanContext =>
+                        "[The conversation reached the context limit. Restart the app to start a new conversation.]",
+                    _ => "[Generation failed. This is an operational failure, not a moderation decision.]",
+                });
             }
             AppendLine(string.Empty);
         }
         catch (Exception ex)
         {
-            AppendLine($"[error: {ex.Message}]");
+            acceptingUpdates = false;
+            ConversationBox.Text = ConversationBox.Text[..responseStart];
+            AppendLine(ex.HResult == unchecked((int)0x8A1F0202)
+                ? "[Content moderation blocked this request. Try different input.]"
+                : $"[Generation failed (0x{ex.HResult:X8}). This is not a moderation decision.]");
             AppendLine(string.Empty);
         }
         finally

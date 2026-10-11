@@ -14,11 +14,15 @@
     <RootNamespace>AionInstructPreview.Chat.ConsoleApp</RootNamespace>
     <AssemblyName>AionInstructPreview.Chat.Console</AssemblyName>
 
-    <Platforms>ARM64</Platforms>
-    <!-- Default unqualified builds to the machine's native architecture. -->
-    <Platform Condition="'$(Platform)' == '' Or '$(Platform)' == 'AnyCPU'">$([MSBuild]::ValueOrDefault('$(PROCESSOR_ARCHITEW6432)', '$(PROCESSOR_ARCHITECTURE)'))</Platform>
-    <RuntimeIdentifiers>win-arm64</RuntimeIdentifiers>
+    <Platforms>ARM64;x64</Platforms>
+    <!-- Default unqualified builds to the machine's native architecture.
+         PROCESSOR_ARCHITECTURE reports AMD64 on Intel/AMD, so normalise that to
+         the MSBuild platform name x64. -->
+    <AionNativeArch>$([MSBuild]::ValueOrDefault('$(PROCESSOR_ARCHITEW6432)', '$(PROCESSOR_ARCHITECTURE)'))</AionNativeArch>
+    <Platform Condition="'$(Platform)' == '' Or '$(Platform)' == 'AnyCPU'">$(AionNativeArch.Replace('AMD64', 'x64'))</Platform>
+    <RuntimeIdentifiers>win-arm64;win-x64</RuntimeIdentifiers>
     <RuntimeIdentifier Condition="'$(Platform)' == 'ARM64'">win-arm64</RuntimeIdentifier>
+    <RuntimeIdentifier Condition="'$(Platform)' == 'x64'">win-x64</RuntimeIdentifier>
 
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -27,7 +31,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="AionInstructPreview.Text.Framework" Version="1.0.*" />
+    <PackageReference Include="AionInstructPreview.Text.Framework" Version="[1.0.1]" />
     <PackageReference Include="Microsoft.Windows.CsWinRT" Version="2.1.5" />
   </ItemGroup>
 

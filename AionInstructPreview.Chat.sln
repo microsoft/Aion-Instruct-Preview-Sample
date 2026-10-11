@@ -5,32 +5,29 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AionInstructPreview.Chat", "AionInstructPreview.Chat.csproj", "{903F4585-D250-4D0F-B941-66EE3F0B1B3F}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tools", "tools", "{07C2787E-EAC7-C090-1BA3-A61EC2A24D84}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AcquireQnnEp", "tools\AcquireQnnEp\AcquireQnnEp.csproj", "{52ED3173-FD3A-46A0-B707-552DF69750E4}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|ARM64 = Debug|ARM64
+		Debug|x64 = Debug|x64
 		Release|ARM64 = Release|ARM64
+		Release|x64 = Release|x64
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{903F4585-D250-4D0F-B941-66EE3F0B1B3F}.Debug|ARM64.ActiveCfg = Debug|ARM64
 		{903F4585-D250-4D0F-B941-66EE3F0B1B3F}.Debug|ARM64.Build.0 = Debug|ARM64
 		{903F4585-D250-4D0F-B941-66EE3F0B1B3F}.Debug|ARM64.Deploy.0 = Debug|ARM64
+		{903F4585-D250-4D0F-B941-66EE3F0B1B3F}.Debug|x64.ActiveCfg = Debug|x64
+		{903F4585-D250-4D0F-B941-66EE3F0B1B3F}.Debug|x64.Build.0 = Debug|x64
+		{903F4585-D250-4D0F-B941-66EE3F0B1B3F}.Debug|x64.Deploy.0 = Debug|x64
 		{903F4585-D250-4D0F-B941-66EE3F0B1B3F}.Release|ARM64.ActiveCfg = Release|ARM64
 		{903F4585-D250-4D0F-B941-66EE3F0B1B3F}.Release|ARM64.Build.0 = Release|ARM64
 		{903F4585-D250-4D0F-B941-66EE3F0B1B3F}.Release|ARM64.Deploy.0 = Release|ARM64
-		{52ED3173-FD3A-46A0-B707-552DF69750E4}.Debug|ARM64.ActiveCfg = Debug|ARM64
-		{52ED3173-FD3A-46A0-B707-552DF69750E4}.Debug|ARM64.Build.0 = Debug|ARM64
-		{52ED3173-FD3A-46A0-B707-552DF69750E4}.Release|ARM64.ActiveCfg = Release|ARM64
-		{52ED3173-FD3A-46A0-B707-552DF69750E4}.Release|ARM64.Build.0 = Release|ARM64
+		{903F4585-D250-4D0F-B941-66EE3F0B1B3F}.Release|x64.ActiveCfg = Release|x64
+		{903F4585-D250-4D0F-B941-66EE3F0B1B3F}.Release|x64.Build.0 = Release|x64
+		{903F4585-D250-4D0F-B941-66EE3F0B1B3F}.Release|x64.Deploy.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
-	EndGlobalSection
-	GlobalSection(NestedProjects) = preSolution
-		{52ED3173-FD3A-46A0-B707-552DF69750E4} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {C7E6C0F1-8E64-45CE-AA03-B1E3603C60D8}

@@ -1,8 +1,9 @@
 # Copilot instructions — Aion Instruct Preview Chat sample
 
 You are working in the **consumer sample** for the **Aion Instruct Preview SDK**: an on-device
-language model that runs locally on the Copilot+ PC NPU — QNN on Snapdragon (ARM64). x64 (Intel/AMD,
-OpenVINO) support is coming soon. A certified NPU EP is required (no CPU fallback, no cloud calls).
+language model that runs locally on the Copilot+ PC NPU — catalog QNN on Snapdragon (ARM64),
+catalog OpenVINO on Intel (x64), with AMD support coming soon. A compatible NPU is required (no
+CPU fallback, no cloud calls).
 This repo shows a
 third-party developer how to (1) consume the SDK's framework package, (2) wire it into their own
 app, and (3) build + run a working chat app. Use this file to orient fast; the
@@ -48,17 +49,16 @@ README → [Prerequisites](../README.md#prerequisites).
 registry-installed Windows SDK are required**; everything else (Windows App SDK, CsWinRT, SDK build
 tools, the Windows metadata ref pack, MSIX loose-layout tooling) is restored from NuGet.
 
-**One-shot quickstart** (downloads + installs the framework MSIX from this repo's GitHub release via
-`gh`, drops the SDK NuGet into `./nuget-local/`, then builds and launches):
+**One-shot quickstart** (downloads and installs the framework MSIX from this repo's public GitHub
+release, drops the SDK NuGet into `./nuget-local/`, then builds and launches):
 
 ```powershell
 ./Bootstrap.ps1
 ```
 
-**Manual build + run** (packaged WinUI app). This preview targets **ARM64 Snapdragon Copilot+ PCs
-(NPU via QNN)** — build with `-p:Platform=ARM64`. x64 (Intel/AMD) support is coming soon. The csproj
-defaults `$(Platform)` to the box's *native* arch, so a bare `dotnet build` on an ARM64 box already
-does the right thing.
+**Manual build + run** (packaged WinUI app). Builds for **ARM64** (Snapdragon/QNN) and **x64**
+(Intel/OpenVINO; AMD support is coming soon) — `-p:Platform=ARM64` or `-p:Platform=x64`. The csproj defaults `$(Platform)` to
+the box's *native* arch, normalising `AMD64` to `x64`, so a bare `dotnet build` does the right thing.
 
 ```powershell
 dotnet run --project AionInstructPreview.Chat.csproj --launch-profile "AionInstructPreview.Chat" -c Release -p:Platform=ARM64   # Snapdragon (QNN NPU)
@@ -92,9 +92,12 @@ README → [Use Aion Instruct Preview in your own app](../README.md#use-aion-ins
    transitively does NOT import its source-generator targets, and you'll get a wall of
    `CS0246 LanguageModel not found`):
    ```xml
-   <PackageReference Include="AionInstructPreview.Text.Framework" Version="1.0.*" />
+   <PackageReference Include="AionInstructPreview.Text.Framework" Version="[1.0.1]" />
    <PackageReference Include="Microsoft.Windows.CsWinRT" Version="2.1.5" />
    ```
+   Pin the SDK with the exact range `[1.0.1]` — the local feed is hand-populated, so `1.0.*`
+   silently resolves to whatever `.nupkg` is present. This sample requires **1.0.1** for the updated text
+   contract and includes `AionInstructPreview.Imaging.winmd`.
    A **packaged** app additionally needs `Microsoft.WindowsAppSDK`, `Microsoft.Windows.SDK.BuildTools`,
    and (for `dotnet run` without VS) `Microsoft.Windows.SDK.BuildTools.WinApp` — see the root
    [`AionInstructPreview.Chat.csproj`](../AionInstructPreview.Chat.csproj) for the exact set and the
@@ -116,28 +119,59 @@ Namespace `AionInstructPreview.Text`. Canonical usage lives in
 ```csharp
 using AionInstructPreview.Text;
 
-LanguageModel model = await LanguageModel.CreateAsync();   // first launch: ~3-5 min NPU compile; warm ~30s
+LanguageModel model = await LanguageModel.CreateAsync();   // cold NPU compilation may take several minutes
 LanguageModelContext ctx = model.CreateContext();          // carries multi-turn history
 
-var op = model.GenerateResponseAsync(ctx, prompt);
-op.Progress = (_, token) => { /* streamed token delta — marshal to UI thread yourself */ };
+// Preserve the sample's previous sampling settings.
+var options = new LanguageModelOptions { Temperature = 0.5f, TopP = 0.9f, TopK = 40 };
+var op = model.GenerateResponseAsync(ctx, prompt, options);
+op.Progress = (_, delta) => { /* streamed text chunk — marshal to UI thread yourself */ };
 LanguageModelResponseResult result = await op;
 ```
 
+- **SDK 1.0.1 contract:** multi-turn generation requires the third
+  `AionInstructPreview.Text.LanguageModelOptions` argument; `null` is rejected.
+  Single-shot generation supports `(prompt)` and `(prompt, options)`. Options expose only
+  `Temperature`, `TopP`, `TopK`, and `ContentFilterOptions` (no LoRA).
+  New options default to `0.9f`, `0.9f`, and `40`; the sample explicitly uses temperature `0.5f`
+  to preserve its previous behavior. The prompt-only overload also retains `0.5f`.
+  `ContentFilterOptions` is constructed by default and enables moderation in the moderation
+  follow-up. That follow-up requires matching rebuilt SDK metadata and runtime; do not infer
+  moderation support from the previously published package versions or invent a release version.
+  Rebuild consumers with NuGet **1.0.1** and framework **1.0.0.3**; this breaking preview contract
+  change does not promise compatibility with previously built consumer binaries.
+- **No preview-only diagnostics:** results expose `Text` and `Status`, not `TokenCount`,
+  `TimeToFirstToken`, or `DecodeDuration`. The model no longer exposes `GetTokenCount`,
+  `MaxPromptTokenCount`, or `ContextLength`. Keep measurements in the app using `Stopwatch`
+  and progress callbacks. Report callback counts/rates as **updates**, not tokenizer tokens;
+  both chat and image description use `GenerationMetrics`.
 - **First `CreateAsync()` per process is slow** (~4-5 min cold while QNN compiles the QDQ ONNX to the
   NPU; ~30s warm from cache). Keep loading UI up; never assume it's hung.
 - **Multi-turn is automatic** via the `LanguageModelContext` — reuse it; call `CreateContext()` again
   to start a fresh conversation.
 - `Progress` callbacks fire on a WinRT-chosen thread — the caller marshals back to the UI thread.
+- **Moderation:** TCM, ICM, and inbox blocklists filter by default. Preserve accepted partial text
+  during progress, but clear the current response on any terminal block/error and guard queued UI
+  callbacks so they cannot append after completion. Only display final result text on `Complete`.
+  The console cannot retract printed text: explicitly report that a failed stream has no final
+  response. Accepted updates do not guarantee later checks or unchanged conversation state.
+  Missing/null filter options and nested severities default to `Low`; they do not disable filtering.
+  Missing/failed moderation or blocklist payloads fail the operation. Do not promise `High` severity
+  support, an off switch, or RAI qualification.
+- Distinguish text prompt/response blocks and image/image-text/description blocks from operational
+  failures. Never display or log raw exception messages that could contain rejected content.
+  Catch `CreateContext(systemPrompt)` rejection (`0x8A1F0202`) on first send and explicit reset.
+  Retain the existing context after a blocked turn; do not automatically start a new conversation.
+  User-typed input and thumbnails may remain visible but do not imply moderation approval.
+  See README → [Content moderation](../README.md#content-moderation); do not claim RAI qualification.
 - Dispose `LanguageModelContext` then `LanguageModel` (`IClosable` projects to `IDisposable`).
 
 API reference: README → [API surface used](../README.md#api-surface-used).
 
 ## Hard rules / gotchas (do not violate)
 
-- **This preview targets ARM64 Snapdragon (QNN NPU) only.** Build with `-p:Platform=ARM64`. x64
-  (Intel/AMD, OpenVINO) support is coming soon. The csproj defaults `$(Platform)` to the box's native
-  arch — don't break that logic.
+- **Snapdragon/QNN and Intel LNL/OpenVINO are supported; AMD support is coming soon.** The csproj defaults `$(Platform)`
+  to the box's native arch and normalises `AMD64` to `x64` — don't break that logic.
 - **Never build under `C:\Windows\System32`** (the default dir of an elevated prompt). UAC file
   virtualization corrupts CsWinRT / XAML codegen (`cswinrt.exe exited with code 1`). Build
   non-elevated from your user profile.

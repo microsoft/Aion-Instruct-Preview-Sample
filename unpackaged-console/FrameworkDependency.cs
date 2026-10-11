@@ -10,11 +10,10 @@ namespace AionInstructPreview.Chat.ConsoleApp;
 /// </summary>
 internal static class FrameworkDependency
 {
-    // PackageFamilyName of the installed framework MSIX
-    // (Microsoft.AionInstructPreview.Framework.1.0). Verify with:
-    //   Get-AppxPackage *AionInstructPreview* | Select PackageFamilyName
-    private const string FamilyName =
+    private const string AionFamilyName =
         "Microsoft.AionInstructPreview.Framework.1.0_8wekyb3d8bbwe";
+    private const string WindowsAppRuntimeFamilyName =
+        "Microsoft.WindowsAppRuntime.2_8wekyb3d8bbwe";
 
     // PackageDependencyProcessorArchitectures (appmodel.h)
     private const int ArchArm64 = 0x10;
@@ -48,11 +47,29 @@ internal static class FrameworkDependency
             ? ArchArm64
             : ArchX64;
 
-        // minVersion 0 means "any installed version of this family".
+        AddProcessDependency(
+            WindowsAppRuntimeFamilyName,
+            minVersion: (2UL << 48) | (1UL << 16),
+            arch,
+            "Install Windows App Runtime 2.0.1.0 or newer. Run.ps1 checks this.");
+
+        AddProcessDependency(
+            AionFamilyName,
+            minVersion: (1UL << 48) | 3UL,
+            arch,
+            "Install Aion Instruct Preview framework 1.0.0.3 or newer. Run.ps1 checks this.");
+    }
+
+    private static void AddProcessDependency(
+        string familyName,
+        ulong minVersion,
+        int arch,
+        string recovery)
+    {
         int hr = TryCreatePackageDependency(
             IntPtr.Zero,
-            FamilyName,
-            minVersion: 0UL,
+            familyName,
+            minVersion,
             arch,
             LifetimeKindProcess,
             lifetimeArtifact: null,
@@ -61,8 +78,7 @@ internal static class FrameworkDependency
         if (hr != 0)
         {
             throw new InvalidOperationException(
-                $"TryCreatePackageDependency({FamilyName}) failed (HRESULT 0x{hr:X8}). " +
-                "Is the Aion Instruct Preview framework package installed? Run.ps1 checks this.",
+                $"TryCreatePackageDependency({familyName}) failed (HRESULT 0x{hr:X8}). {recovery}",
                 Marshal.GetExceptionForHR(hr));
         }
 
@@ -70,12 +86,10 @@ internal static class FrameworkDependency
         if (hr != 0)
         {
             throw new InvalidOperationException(
-                $"AddPackageDependency failed (HRESULT 0x{hr:X8}).",
+                $"AddPackageDependency({familyName}) failed (HRESULT 0x{hr:X8}). {recovery}",
                 Marshal.GetExceptionForHR(hr));
         }
 
-        // depId is HeapAlloc'd; intentionally leaked. The Process-lifetime
-        // dependency is released automatically at process exit, so there is
-        // nothing to clean up for the app's lifetime.
+        // Process-lifetime dependencies are released automatically at process exit.
     }
 }

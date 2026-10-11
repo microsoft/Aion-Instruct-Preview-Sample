@@ -36,11 +36,15 @@
 
     <!-- Keep sibling sample projects out of this root project's default item globs. -->
     <DefaultItemExcludes>$(DefaultItemExcludes);unpackaged-wpf\**;unpackaged-console\**;tools\**</DefaultItemExcludes>
-    <Platforms>ARM64</Platforms>
-    <!-- Default unqualified builds to the machine's native architecture for MSIX packaging. -->
-    <Platform Condition="'$(Platform)' == '' Or '$(Platform)' == 'AnyCPU'">$([MSBuild]::ValueOrDefault('$(PROCESSOR_ARCHITEW6432)', '$(PROCESSOR_ARCHITECTURE)'))</Platform>
-    <RuntimeIdentifiers>win-arm64</RuntimeIdentifiers>
+    <Platforms>ARM64;x64</Platforms>
+    <!-- Default unqualified builds to the machine's native architecture for MSIX packaging.
+         PROCESSOR_ARCHITECTURE reports AMD64 on Intel/AMD, so normalise that to
+         the MSBuild platform name x64. -->
+    <AionNativeArch>$([MSBuild]::ValueOrDefault('$(PROCESSOR_ARCHITEW6432)', '$(PROCESSOR_ARCHITECTURE)'))</AionNativeArch>
+    <Platform Condition="'$(Platform)' == '' Or '$(Platform)' == 'AnyCPU'">$(AionNativeArch.Replace('AMD64', 'x64'))</Platform>
+    <RuntimeIdentifiers>win-arm64;win-x64</RuntimeIdentifiers>
     <RuntimeIdentifier Condition="'$(Platform)' == 'ARM64'">win-arm64</RuntimeIdentifier>
+    <RuntimeIdentifier Condition="'$(Platform)' == 'x64'">win-x64</RuntimeIdentifier>
 
     <!-- WinUI 3 packaged app with MSIX identity. -->
     <UseWinUI>true</UseWinUI>
@@ -51,7 +55,7 @@
 
     <!-- Use the NuGet-delivered Windows metadata pack for CsWinRT projection generation. -->
     <WindowsSdkPackageVersion>10.0.26100.57</WindowsSdkPackageVersion>
-    <CsWinRTWindowsMetadata>$(NuGetPackageRoot)microsoft.windows.sdk.net.ref\$(WindowsSdkPackageVersion)\winmd</CsWinRTWindowsMetadata>
+    <CsWinRTWindowsMetadata>$([System.IO.Path]::Combine('$(NuGetPackageRoot)', 'microsoft.windows.sdk.net.ref', '$(WindowsSdkPackageVersion)', 'winmd'))</CsWinRTWindowsMetadata>
 
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
@@ -66,7 +70,7 @@
 
   <ItemGroup>
     <!-- SDK reference: provides the WinRT projection and injects the framework PackageDependency. -->
-    <PackageReference Include="AionInstructPreview.Text.Framework" Version="1.0.*" />
+    <PackageReference Include="AionInstructPreview.Text.Framework" Version="[1.0.1]" />
 
     <!-- WinUI 3 / Windows App SDK. -->
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.0.1" />
@@ -97,20 +101,41 @@
   </ItemGroup>
 
   <!--
-    Sync Package.appxmanifest's <Identity ProcessorArchitecture> to the
-    current build's $(Platform). The source manifest holds "arm64" already;
-    this keeps it correct if $(Platform) is overridden. Runs before AppX
-    packaging picks up the manifest.
+    Give the AppX packaging pipeline a per-architecture copy of the manifest, rather than
+    editing the tracked source file.
+
+    Package.appxmanifest is committed with ProcessorArchitecture="arm64". This target used to
+    XmlPoke that file in place, so every x64 build left the working tree dirty and every ARM64
+    build flipped it back. In a public repo that is an easy accidental commit, and committing
+    the x64 value would silently break ARM64 packaging for everyone who pulled it.
+
+    Instead: copy to the intermediate directory, rewrite the copy, and point @(AppxManifest)
+    at it. Same approach the TAEF project uses (AionInstructPreviewRewriteTaefManifestArch),
+    which rewrites into $(OutDir) and leaves its source alone.
+
+    The XPath uses local-name() because XmlPoke has no way to bind a namespace prefix for the
+    manifest's default namespace.
   -->
-  <Target Name="AionInstructChatSyncManifestArch" BeforeTargets="_GenerateCurrentProjectAppxManifest;_GenerateAppxManifest;GenerateAppxManifest" Condition="'$(Platform)' == 'ARM64'">
+  <Target Name="AionInstructChatSyncManifestArch" BeforeTargets="_GenerateCurrentProjectAppxManifest;_GenerateAppxManifest;GenerateAppxManifest" Condition="'$(Platform)' == 'ARM64' Or '$(Platform)' == 'x64'">
     <PropertyGroup>
-      <_AionInstructChatManifestArch>arm64</_AionInstructChatManifestArch>
+      <_AionInstructChatManifestArch Condition="'$(Platform)' == 'ARM64'">arm64</_AionInstructChatManifestArch>
+      <_AionInstructChatManifestArch Condition="'$(Platform)' == 'x64'">x64</_AionInstructChatManifestArch>
+      <_AionInstructChatStagedManifest>$(IntermediateOutputPath)Package.appxmanifest</_AionInstructChatStagedManifest>
     </PropertyGroup>
+    <MakeDir Directories="$(IntermediateOutputPath)" />
+    <Copy SourceFiles="Package.appxmanifest"
+          DestinationFiles="$(_AionInstructChatStagedManifest)"
+          SkipUnchangedFiles="false" />
     <XmlPoke
-      XmlInputPath="Package.appxmanifest"
-      Query="/p:Package/p:Identity/@ProcessorArchitecture"
-      Value="$(_AionInstructChatManifestArch)"
-      Namespaces="&lt;Namespace Prefix='p' Uri='http://schemas.microsoft.com/appx/manifest/foundation/windows10' /&gt;" />
+      XmlInputPath="$(_AionInstructChatStagedManifest)"
+      Query="/*[local-name()='Package']/*[local-name()='Identity']/@ProcessorArchitecture"
+      Value="$(_AionInstructChatManifestArch)" />
+    <ItemGroup>
+      <AppxManifest Remove="@(AppxManifest)" />
+      <AppxManifest Include="$(_AionInstructChatStagedManifest)" />
+    </ItemGroup>
+    <Message Importance="high"
+             Text="[AionInstructChatSyncManifestArch] $(_AionInstructChatStagedManifest) -&gt; ProcessorArchitecture=$(_AionInstructChatManifestArch)" />
   </Target>
 
 </Project>
