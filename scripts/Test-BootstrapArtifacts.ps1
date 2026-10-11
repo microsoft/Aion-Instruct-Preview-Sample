@@ -15,7 +15,7 @@ if ($errors.Count) { throw 'Bootstrap.ps1 contains syntax errors.' }
 foreach ($name in @('Assert-SdkNuGetCacheMatches', 'Assert-LocalFrameworkMatches',
         'Assert-FrameworkMsixIdentity', 'Get-FrameworkMsixIdentity',
         'Assert-MicrosoftSignedPackage', 'Assert-MicrosoftSignedNuGet',
-        'Get-X64ProviderRequirement', 'Ensure-Directory')) {
+        'Get-X64ProviderRequirement', 'Select-FrameworkRegistration', 'Ensure-Directory')) {
     $definition = $ast.Find({
         param($node)
         $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name
@@ -53,6 +53,24 @@ if ($intelRequirement.Label -ne 'OpenVINO' -or
     throw 'Intel provider requirements are incorrect.'
 }
 Assert-Rejected { Get-X64ProviderRequirement 'AMD Ryzen AI' } 'AMD support is coming soon'
+
+$registrations = @(
+    [pscustomobject]@{ Version = '1.0.0.2'; InstallLocation = 'old' },
+    [pscustomobject]@{ Version = '1.0.0.3'; InstallLocation = 'target' },
+    [pscustomobject]@{ Version = '1.0.0.4'; InstallLocation = 'newest' }
+)
+$selection = Select-FrameworkRegistration -Packages $registrations -TargetVersion '1.0.0.3'
+if ($selection.Target.InstallLocation -ne 'target' -or
+    $selection.Highest.InstallLocation -ne 'newest') {
+    throw 'Side-by-side framework selection did not select the exact target and highest version.'
+}
+
+$bootstrapText = [IO.File]::ReadAllText((Join-Path $root 'Bootstrap.ps1'))
+$amdGate = $bootstrapText.IndexOf('$x64Requirement = Get-X64ProviderRequirement')
+$frameworkDownload = $bootstrapText.IndexOf('# --- 4. Framework MSIX state')
+if ($amdGate -lt 0 -or $frameworkDownload -lt 0 -or $amdGate -gt $frameworkDownload) {
+    throw 'The unsupported-AMD gate must run before framework download and installation.'
+}
 
 $temporary = Join-Path ([IO.Path]::GetTempPath()) ('AionBootstrapTests-' + [guid]::NewGuid())
 $previousCache = $env:NUGET_PACKAGES

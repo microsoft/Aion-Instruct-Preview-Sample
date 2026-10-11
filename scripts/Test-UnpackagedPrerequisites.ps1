@@ -10,9 +10,10 @@ $root = Split-Path $PSScriptRoot -Parent
 
 function Test-Launcher {
     param([string]$Path, [bool]$HasWar2, [string]$FrameworkVersion, [bool]$ExpectBuild,
-        [string]$NuGetConfig, [string]$WarArchitecture = 'ARM64')
+        [string]$NativeArchitecture, [string]$NuGetConfig, [string]$WarArchitecture)
 
     $queries = [Collections.Generic.List[string]]::new()
+    if (-not $WarArchitecture) { $WarArchitecture = $NativeArchitecture }
     function Get-AppxPackage {
         param([string]$Name)
         $queries.Add($Name)
@@ -20,7 +21,7 @@ function Test-Launcher {
             return [PSCustomObject]@{
                 Name = 'Microsoft.AionInstructPreview.Framework.1.0'
                 Version = $FrameworkVersion
-                Architecture = 'ARM64'
+                Architecture = $NativeArchitecture
             }
         }
         if ($Name -eq 'Microsoft.WindowsAppRuntime.2*' -and $HasWar2) {
@@ -43,11 +44,21 @@ function Test-Launcher {
     }
 
     $message = ''
+    $previousArchitecture = $env:PROCESSOR_ARCHITECTURE
+    $previousNativeArchitecture = $env:PROCESSOR_ARCHITEW6432
     try {
-        if ($NuGetConfig) { & $Path -NuGetConfig $NuGetConfig }
-        else { & $Path }
+        $env:PROCESSOR_ARCHITECTURE = if ($NativeArchitecture -eq 'ARM64') { 'ARM64' } else { 'AMD64' }
+        $env:PROCESSOR_ARCHITEW6432 = $null
+        try {
+            if ($NuGetConfig) { & $Path -NuGetConfig $NuGetConfig }
+            else { & $Path }
+        }
+        catch { $message = $_.Exception.Message }
     }
-    catch { $message = $_.Exception.Message }
+    finally {
+        $env:PROCESSOR_ARCHITECTURE = $previousArchitecture
+        $env:PROCESSOR_ARCHITEW6432 = $previousNativeArchitecture
+    }
     if (($message -eq 'BUILD_REACHED') -ne $ExpectBuild) {
         throw "Unexpected prerequisite result for $Path : $message"
     }
@@ -61,15 +72,19 @@ function Test-Launcher {
 
 foreach ($relative in @('unpackaged-console\Run.ps1', 'unpackaged-wpf\Run.ps1')) {
     $path = Join-Path $root $relative
-    Test-Launcher -Path $path -HasWar2 $true -FrameworkVersion '1.0.0.3' -ExpectBuild $true
-    Test-Launcher -Path $path -HasWar2 $false -FrameworkVersion '1.0.0.3' -ExpectBuild $false
-    Test-Launcher -Path $path -HasWar2 $true -FrameworkVersion '1.0.0.2' -ExpectBuild $false
-    Test-Launcher -Path $path -HasWar2 $true -FrameworkVersion '1.0.0.1' -ExpectBuild $false
-    Test-Launcher -Path $path -HasWar2 $true -FrameworkVersion '1.0.0.0' -ExpectBuild $false
-    Test-Launcher -Path $path -HasWar2 $true -FrameworkVersion '1.0.0.3' -ExpectBuild $false `
-        -WarArchitecture 'x64'
-    Test-Launcher -Path $path -HasWar2 $true -FrameworkVersion '1.0.0.3' -ExpectBuild $true `
-        -NuGetConfig (Join-Path $root 'nuget.config')
+    foreach ($nativeArchitecture in @('ARM64', 'x64')) {
+        $otherArchitecture = if ($nativeArchitecture -eq 'ARM64') { 'x64' } else { 'ARM64' }
+        $common = @{ Path = $path; NativeArchitecture = $nativeArchitecture }
+        Test-Launcher @common -HasWar2 $true -FrameworkVersion '1.0.0.3' -ExpectBuild $true
+        Test-Launcher @common -HasWar2 $false -FrameworkVersion '1.0.0.3' -ExpectBuild $false
+        Test-Launcher @common -HasWar2 $true -FrameworkVersion '1.0.0.2' -ExpectBuild $false
+        Test-Launcher @common -HasWar2 $true -FrameworkVersion '1.0.0.1' -ExpectBuild $false
+        Test-Launcher @common -HasWar2 $true -FrameworkVersion '1.0.0.0' -ExpectBuild $false
+        Test-Launcher @common -HasWar2 $true -FrameworkVersion '1.0.0.3' -ExpectBuild $false `
+            -WarArchitecture $otherArchitecture
+        Test-Launcher @common -HasWar2 $true -FrameworkVersion '1.0.0.3' -ExpectBuild $true `
+            -NuGetConfig (Join-Path $root 'nuget.config')
+    }
 }
 foreach ($relative in @('Bootstrap.ps1', 'unpackaged-console\Run.ps1', 'unpackaged-wpf\Run.ps1')) {
     $rejected = $false
@@ -87,4 +102,4 @@ foreach ($parameter in @('FrameworkMsixPath', 'SdkNuGetPath')) {
     }
     if (-not $rejected) { throw "Bootstrap did not reject lone -$parameter before setup." }
 }
-Write-Output 'PASS: 14 launcher scenarios and 5 missing-input checks; no packages or apps changed.'
+Write-Output 'PASS: 28 launcher scenarios and 5 missing-input checks; no packages or apps changed.'

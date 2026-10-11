@@ -154,7 +154,8 @@ function Check-Package {
             Write-Check FAIL ("$Friendly not installed (Get-AppxPackage $Name returned nothing)")
         } else {
             Write-Check WARN ("$Friendly not installed (optional)")
-        }        return
+        }
+        return
     }
     foreach ($pkg in $pkgs) {
         $detail = "PackageFullName: $($pkg.PackageFullName)`nArchitecture: $($pkg.Architecture)  Version: $($pkg.Version)"

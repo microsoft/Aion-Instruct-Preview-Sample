@@ -61,7 +61,7 @@ guidance.
   preview behavior, distribution restrictions, watermarking, and LoRA compatibility.
 - [Pre-release validation package EULA](docs/Aion-Instruct-Preview-Pre-Release-EULA.docx) —
   Microsoft Software License Terms for the limited-use Aion Instruct Windows Developer Validation
-  Package. Review these terms before downloading or using the pre-release validation package.
+  Package. Review these terms before using the pre-release validation package.
 
 ## Quickstart
 
@@ -355,7 +355,7 @@ Those references do the API projection identically to the packaged app. Because 
 | Concern | Packaged | Unpackaged |
 |---|---|---|
 | API projection (`using AionInstructPreview.Text;`) | `AionInstructPreview.Text.Framework.props` feeds CsWinRT | **identical** — same `PackageReference` |
-| Framework dependency | injected into your `Package.appxmanifest` by `AionInstructPreview.Text.Framework.targets` at build | **no manifest, so the targets no-op** — taken at runtime via `TryCreatePackageDependency` / `AddPackageDependency` ([`FrameworkDependency.cs`](unpackaged-wpf/FrameworkDependency.cs)) |
+| Package dependencies | Aion framework and Windows App Runtime 2 dependencies are injected into `Package.appxmanifest` at build | **no manifest, so the targets no-op** — both dependencies are added at runtime via `TryCreatePackageDependency` / `AddPackageDependency` ([`FrameworkDependency.cs`](unpackaged-wpf/FrameworkDependency.cs)) |
 | WinRT activation | cross-package activation via the package graph | **registration-free** — with the framework dir on the DLL search path, CsWinRT activates the runtimeclasses through the framework's `AionInstructPreview.Text.dll`. No SxS fusion manifest, no HKLM registration. |
 | Execution provider | auto-selected by the SDK through the WinML catalog | **identical** — the SDK picks the EP internally |
 
@@ -370,24 +370,20 @@ protected override void OnStartup(StartupEventArgs e)
     base.OnStartup(e);
 }
 
-// FrameworkDependency.EnsureLoaded() -- the Win32 dynamic-dependency APIs,
-// callable from an unpackaged process on Windows 11. They add the framework
-// package to this process's package graph + DLL search path, so WinRT activation
-// resolves AionInstructPreview.Text through the framework's AionInstructPreview.Text.dll.
-// The framework MSIX must match the process architecture (ARM64 or x64).
+// FrameworkDependency.EnsureLoaded() uses the Win32 dynamic-dependency APIs
+// to add Windows App Runtime 2 first, then the Aion framework. WAR 2 supplies
+// ContentFilterOptions; the Aion package supplies the model runtime.
 int arch = RuntimeInformation.ProcessArchitecture == Architecture.Arm64
     ? 0x10    // Arm64
     : 0x4;    // X64  (see PackageDependencyProcessorArchitectures in appmodel.h)
-TryCreatePackageDependency(
-    /* user            */ IntPtr.Zero,
-    /* packageFamily   */ "Microsoft.AionInstructPreview.Framework.1.0_8wekyb3d8bbwe",
-    /* minVersion      */ (1UL << 48) | 3UL, // 1.0.0.3
-    /* architectures   */ arch,
-    /* lifetimeKind    */ 0,       // Process
-    /* lifetimeArtifact*/ null,
-    /* options         */ 0,
-    out IntPtr depId);
-AddPackageDependency(depId, /* rank */ 0, /* options */ 0, out _, out _);
+AddProcessDependency(
+    "Microsoft.WindowsAppRuntime.2_8wekyb3d8bbwe",
+    (2UL << 48) | (1UL << 16), // 2.0.1.0
+    arch);
+AddProcessDependency(
+    "Microsoft.AionInstructPreview.Framework.1.0_8wekyb3d8bbwe",
+    (1UL << 48) | 3UL, // 1.0.0.3
+    arch);
 ```
 
 From there, `LanguageModel.CreateAsync()` and the rest of the API are called exactly as in the packaged sample — see [`MainWindow.xaml.cs`](unpackaged-wpf/MainWindow.xaml.cs), which streams responses into the UI by marshaling the `Progress` callback onto the dispatcher thread.

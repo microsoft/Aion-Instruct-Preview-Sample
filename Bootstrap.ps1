@@ -247,6 +247,20 @@ function Get-X64ProviderRequirement {
     return $null
 }
 
+function Select-FrameworkRegistration {
+    param(
+        [object[]]$Packages,
+        [version]$TargetVersion
+    )
+    $ordered = @($Packages | Sort-Object { [version]$_.Version } -Descending)
+    return [pscustomobject]@{
+        Target = $ordered |
+            Where-Object { [version]$_.Version -eq $TargetVersion } |
+            Select-Object -First 1
+        Highest = $ordered | Select-Object -First 1
+    }
+}
+
 function Ensure-Directory {
     param([string]$Path)
     if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
@@ -361,6 +375,13 @@ if (-not $arch) {
 }
 Write-Step "Architecture: $arch"
 
+$x64Requirement = $null
+if ($arch -eq 'x64') {
+    $processorName = (Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue |
+        Select-Object -First 1 -ExpandProperty Name)
+    $x64Requirement = Get-X64ProviderRequirement $processorName
+}
+
 # --- 2. WAR 2 runtime check -------------------------------------------------
 Ensure-Runtime -Label 'WAR 2' -PkgId $WarPkgId -WingetId 'Microsoft.WindowsAppRuntime.2.0' `
     -Arch $arch -MinVersion '2.0.1.0'
@@ -470,7 +491,7 @@ if ($useLocalAssets) {
     Write-Host ''
     Write-Host 'Pre-release license terms:' -ForegroundColor Yellow
     Write-Host '    https://github.com/microsoft/Aion-Instruct-Preview-Sample/blob/main/docs/Aion-Instruct-Preview-Pre-Release-EULA.docx' -ForegroundColor Yellow
-    Write-Host 'Review these terms before downloading or using the pre-release validation package.' -ForegroundColor Yellow
+    Write-Host 'Review these terms before using the pre-release validation package.' -ForegroundColor Yellow
 }
 if ([version]$targetFwVersion -lt [version]'1.0.0.3') {
     Stop-WithRecovery `
@@ -511,19 +532,18 @@ if ($useLocalAssets -and (Split-Path $SdkNuGetPath -Leaf) -ne $expectedNupkgName
 }
 
 # --- 4. Framework MSIX state -----------------------------------------------
-$fw = Get-AppxPackage -Name $FrameworkPkgId -ErrorAction SilentlyContinue |
-      Where-Object { $_.Architecture -eq $arch }
-if (@($fw).Count -gt 1) {
-    Stop-WithRecovery -Title "Multiple $arch Aion frameworks are installed" -Recovery @(
-        'Inspect installed frameworks and resolve the ambiguity before installing another package.'
-    )
-}
-if ($fw -and [version]$fw.Version -gt [version]$targetFwVersion) {
-    Stop-WithRecovery -Title "Installed framework $($fw.Version) is newer than $targetFwVersion" -Recovery @(
+$frameworks = @(Get-AppxPackage -Name $FrameworkPkgId -ErrorAction SilentlyContinue |
+    Where-Object { $_.Architecture -eq $arch })
+$frameworkSelection = Select-FrameworkRegistration `
+    -Packages $frameworks -TargetVersion ([version]$targetFwVersion)
+$fw = $frameworkSelection.Target
+if (-not $fw -and $frameworkSelection.Highest -and
+    [version]$frameworkSelection.Highest.Version -gt [version]$targetFwVersion) {
+    Stop-WithRecovery -Title "Installed framework $($frameworkSelection.Highest.Version) is newer than $targetFwVersion" -Recovery @(
         'Use an SDK release at least as new as the installed framework; downgrade is not automatic.'
     )
 }
-if ($fw -and $fw.Version -eq $targetFwVersion) {
+if ($fw) {
     if ($useLocalAssets) {
         Assert-LocalFrameworkMatches -MsixPath $FrameworkMsixPath -InstallLocation $fw.InstallLocation
     } else {
@@ -561,9 +581,11 @@ if ($fw -and $fw.Version -eq $targetFwVersion) {
     }
     Write-Step "Installing framework MSIX ..."
     Add-AppxPackage -Path $msixPath -ForceUpdateFromAnyVersion
-    $fw = Get-AppxPackage -Name $FrameworkPkgId -ErrorAction SilentlyContinue |
-          Where-Object { $_.Architecture -eq $arch }
-    if (-not $fw -or [version]$fw.Version -ne [version]$targetFwVersion) {
+    $frameworks = @(Get-AppxPackage -Name $FrameworkPkgId -ErrorAction SilentlyContinue |
+        Where-Object { $_.Architecture -eq $arch })
+    $fw = (Select-FrameworkRegistration `
+        -Packages $frameworks -TargetVersion ([version]$targetFwVersion)).Target
+    if (-not $fw) {
         Stop-WithRecovery `
             -Title "Framework MSIX install did not register expected version $targetFwVersion." `
             -Recovery @(
@@ -637,24 +659,21 @@ if ($arch -eq 'ARM64') {
         Write-OK 'Compatible QNN EP 2 is already installed'
     }
 } else {
-    $processorName = (Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue |
-        Select-Object -First 1 -ExpandProperty Name)
-    $requirement = Get-X64ProviderRequirement $processorName
-    if ($requirement) {
-        $providerPackages = @(Get-AppxPackage -Name $requirement.Pattern -ErrorAction SilentlyContinue |
+    if ($x64Requirement) {
+        $providerPackages = @(Get-AppxPackage -Name $x64Requirement.Pattern -ErrorAction SilentlyContinue |
             Where-Object { "$($_.Architecture)" -eq 'X64' })
         $compatible = @($providerPackages |
-            Where-Object { [version]$_.Version -ge $requirement.Minimum })
+            Where-Object { [version]$_.Version -ge $x64Requirement.Minimum })
         if ($compatible.Count -gt 0) {
-            Write-OK "Compatible catalog $($requirement.Label) provider is already installed"
+            Write-OK "Compatible catalog $($x64Requirement.Label) provider is already installed"
         } elseif ($providerPackages.Count -gt 0) {
             $installed = $providerPackages | Sort-Object { [version]$_.Version } -Descending |
                 Select-Object -First 1 -ExpandProperty Version
             Write-Step (("Installed catalog {0} version {1} is below required {2}; " +
                 "WinML will try Store acquisition on first model load.") -f
-                $requirement.Label, $installed, $requirement.Minimum)
+                $x64Requirement.Label, $installed, $x64Requirement.Minimum)
         } else {
-            Write-Step ("Catalog $($requirement.Label) $($requirement.Minimum) or newer will be " +
+            Write-Step ("Catalog $($x64Requirement.Label) $($x64Requirement.Minimum) or newer will be " +
                 'acquired when the model first loads (network access may be required).')
         }
     }
