@@ -637,8 +637,7 @@ them onto a near-miss would feed the encoder swapped channels. Convert before yo
 >   than bypassing text-in-image moderation. No detected text is a valid result.
 > - **Description accuracy.** Image descriptions may omit details, misinterpret content, or
 >   include information not present in the image. Evaluate accuracy and grounding in your
->   application scenarios; this validation package is not a quality baseline for the final
->   Windows delivery.
+>   application scenarios.
 
 ---
 
