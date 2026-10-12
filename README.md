@@ -1,7 +1,8 @@
 # Aion Instruct Preview Chat
 
 A WinUI 3 desktop chat app that runs against the **AionInstructPreview** on-device language model on
-Copilot+ PCs. Text chunks stream into the bubble as they're generated; app-observed first-update
+ARM64 Snapdragon and x64 Intel Lunar Lake Copilot+ PCs. Text chunks stream into the bubble as
+they're generated; app-observed first-update
 latency and updates/sec are shown under each reply. A progress update is not an exact tokenizer token.
 
 Two tabs, two APIs: **Chat** drives `AionInstructPreview.Text` (multi-turn conversation, optional system
@@ -14,14 +15,14 @@ entire in-box API.
 > - **Platform support.** The matching SDK framework supports **ARM64 Snapdragon** with
 >   catalog-managed QNN (minimum EP `2.2480.49`) and **x64 Intel Lunar Lake** with
 >   catalog-managed OpenVINO (minimum EP `1.8.95`). **AMD support is coming soon.**
->   There is no CPU fallback.
+>   There is no CPU fallback when a supported NPU provider is unavailable.
 > - **Performance.** The first-update latency and updates/sec shown in the app are **preliminary,
 >   app-observed streaming measurements — not tokenizer throughput or final model performance.**
 >   Runtime and model optimizations are underway.
-> - **Release compatibility.** If the latest GitHub release predates the moderated universal
->   SDK, `Bootstrap.ps1` rejects it rather than installing an incompatible framework. Use the
->   matching signed release once published. The moderation behavior below does not establish
->   RAI qualification.
+> - **Release compatibility.** Use framework **1.0.0.3** with SDK NuGet **1.0.1** from the
+>   [published release](https://github.com/microsoft/Aion-Instruct-Preview-Sample/releases/tag/v1.0.0.3).
+>   Bootstrap rejects older incompatible releases. The moderation behavior below does not
+>   establish RAI qualification.
 
 ## Developer validation limitations
 
@@ -65,10 +66,12 @@ guidance.
 
 ## Quickstart
 
-You need a **[Copilot+ PC](https://learn.microsoft.com/windows/ai/npu-devices/)** running **Windows 11**, plus a few tools:
+You need an **ARM64 Snapdragon or x64 Intel Lunar Lake
+[Copilot+ PC](https://learn.microsoft.com/windows/ai/npu-devices/)** running **Windows 11**, plus
+a few tools. AMD support is coming soon.
 
 - **.NET 9 SDK** — `winget install --id Microsoft.DotNet.SDK.9`
-- **Git** — `winget install --id Git.Git` (or download the repo ZIP from the green **Code** button). `Bootstrap.ps1` downloads the signed release straight from this repo's **public** GitHub releases over HTTPS.
+- **Git** — `winget install --id Git.Git` (or download the repo ZIP from the green **Code** button).
 - **Developer Mode** on — Settings → Privacy & security → For developers → Developer Mode → On (`Bootstrap.ps1` enables it for you if it isn't already)
 
 Then clone and run the bootstrap script:
@@ -80,20 +83,21 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\Bootstrap.ps1
 ```
 
-`Bootstrap.ps1` downloads and installs the matching model framework and SDK NuGet, then builds
-and launches the chat app. The framework's bundled WinML catalog acquires the compatible QNN,
+`Bootstrap.ps1` checks for Windows App Runtime 2 version `2.0.1.0` or newer and installs it if
+needed, downloads and installs the matching model framework and SDK NuGet, then builds and
+launches the chat app. The framework's bundled WinML catalog acquires the compatible QNN
 or OpenVINO execution provider when the model first loads. AMD support is coming soon.
 Cold NPU cache compilation can take several minutes (longer for some models and devices);
 subsequent launches reuse valid caches.
 
-> `Bootstrap.ps1` downloads the signed release from this repo's public GitHub releases over plain HTTPS. For the manual steps, Visual Studio, or if you hit a snag, see [Prerequisites](#prerequisites) and [Quickstart details](#quickstart-details).
+> `Bootstrap.ps1` downloads and verifies signed assets from this repo's public GitHub releases
+> over HTTPS. For manual steps, Visual Studio, or setup issues, see
+> [Prerequisites](#prerequisites) and [Quickstart details](#quickstart-details).
 >
 > Want to use Aion Instruct Preview in **your own** app instead? See [Use Aion Instruct Preview in your own app](#use-aion-instruct-preview-in-your-own-app).
 
-If the matching universal SDK release has not yet been published, `Bootstrap.ps1` stops at
-the older release instead of installing an incompatible framework. For validation against
-locally supplied SDK build artifacts, pass **both** the signed framework MSIX for your device
-and the matching SDK contract NuGet:
+For validation against explicitly supplied SDK build artifacts instead of the public release,
+pass **both** the signed framework MSIX for your device and the matching SDK contract NuGet:
 
 ```powershell
 .\Bootstrap.ps1 -FrameworkMsixPath '<path-to-ARM64-or-x64-framework.msix>' `
@@ -101,7 +105,7 @@ and the matching SDK contract NuGet:
 ```
 
 This local mode does not require access to the SDK's private build feeds. The public quickstart
-above uses public GitHub release assets once they become available.
+above uses the published GitHub release assets.
 If the supplied MSIX has the same version as the installed framework, bootstrap compares their
 package block maps before reusing it. Different contents require a newly versioned framework;
 bootstrap does not silently substitute the installed build.
@@ -112,7 +116,8 @@ bootstrap does not silently substitute the installed build.
 
 - **Windows 11** on an ARM64 Snapdragon Copilot+ PC (QNN) or x64 Intel Lunar Lake Copilot+
   PC (OpenVINO). The SDK uses the WinML catalog and requires QNN `2.2480.49` or OpenVINO
-  `1.8.95` or newer. AMD support is coming soon. An NPU is required—there is no CPU fallback.
+  `1.8.95` or newer. AMD support is coming soon. A supported NPU provider is required; there is
+  no CPU fallback when it is unavailable.
 
 **Build-time vs run-time — these are different things.** A common source of confusion (see [Troubleshooting](#troubleshooting)) is assuming a build error means a *runtime* component is missing. It usually doesn't. Keep the two lists straight:
 
@@ -148,7 +153,8 @@ Developer Mode.
 
 #### For either path
 
-- **Git** — `winget install --id Git.Git`. Used to clone the repo; you can also download the source ZIP from the green **Code** button instead. `Bootstrap.ps1` fetches the signed release from this repo's **public** GitHub releases over HTTPS.
+- **Git** — `winget install --id Git.Git`. Used to clone the repo; you can also download the
+  source ZIP from the green **Code** button instead.
 
 #### Visual Studio 2026 setup
 
@@ -214,9 +220,10 @@ A few notes on the steps in the [Quickstart](#quickstart) above:
 
 - **Where to clone.** Put the repo under your user profile (e.g. `C:\repos` or `%USERPROFILE%`) — **not** under `C:\Windows\System32`. See the [Troubleshooting](#troubleshooting) note on System32 for why an elevated prompt's default directory breaks the build.
 - **`Set-ExecutionPolicy`.** Required on a machine with the default `Restricted` policy — otherwise `.\Bootstrap.ps1` fails with *"Bootstrap.ps1 cannot be loaded because running scripts is disabled on this system"*, even after a clean `git clone`. It's scoped to the current process, needs no admin, and reverts when you close the window.
-- **What `Bootstrap.ps1` does.** Detects your arch, enables Developer Mode if needed, gets the
-  latest compatible signed release from this repo's public GitHub releases, installs or upgrades
-  the matching framework MSIX, and restores the SDK NuGet. It then builds and launches the app
+- **What `Bootstrap.ps1` does.** Detects your architecture, checks supported hardware, installs
+  Windows App Runtime 2 if needed, and enables Developer Mode if needed. It queries the latest
+  public release and stops if it predates framework `1.0.0.3`, installs or upgrades the matching
+  framework MSIX, and prepares the SDK NuGet. It then builds and launches the app
   via `dotnet run`; the framework acquires a compatible catalog execution provider during model
   creation if needed. It never fetches private build-input EP packages.
 - **First launch.** Model loading can take several minutes while the runtime compiles NPU caches.
@@ -227,33 +234,45 @@ A few notes on the steps in the [Quickstart](#quickstart) above:
 
 ## Manual install (what Bootstrap.ps1 does)
 
-Skip this section unless you want to see the moving parts. Bashers using `Bootstrap.ps1` can ignore.
+Skip this section if you use `Bootstrap.ps1` to install and launch the sample.
+
+### 0. Install Windows App Runtime 2
+
+Ensure Windows App Runtime 2 version `2.0.1.0` or newer is installed for your device architecture:
+
+```powershell
+winget install --id Microsoft.WindowsAppRuntime.2.0 --exact
+```
+
+This runtime supplies the imaging and content-safety types used by the SDK.
 
 ### 1. Install the Aion Instruct Preview release
 
-Grab the matching signed release from
-<https://github.com/microsoft/Aion-Instruct-Preview-Sample/releases>. Choose the framework
-MSIX for your device and the SDK NuGet:
+Download the matching artifacts from
+[release v1.0.0.3](https://github.com/microsoft/Aion-Instruct-Preview-Sample/releases/tag/v1.0.0.3).
+Choose one framework MSIX for your device and the SDK NuGet, and review the EULA before use:
 
 | Asset | Who needs it |
 |---|---|
-| `AionInstructPreview.LanguageModel.Framework_<ver>_ARM64.msix` | ARM64 Snapdragon (catalog QNN) |
-| `AionInstructPreview.LanguageModel.Framework_<ver>_x64.msix` | x64 framework; Intel OpenVINO is supported, and AMD support is coming soon |
-| `AionInstructPreview.Text.Framework.<ver>.nupkg` | The SDK NuGet (arch-neutral) |
+| `AionInstructPreview.LanguageModel.Framework_1.0.0.3_ARM64.msix` | ARM64 Snapdragon (catalog QNN) |
+| `AionInstructPreview.LanguageModel.Framework_1.0.0.3_x64.msix` | x64 Intel Lunar Lake (catalog OpenVINO); AMD support is coming soon |
+| `AionInstructPreview.Text.Framework.1.0.1.nupkg` | The SDK NuGet (arch-neutral) |
+| `Aion-Instruct-Preview-Pre-Release-EULA.docx` | Legal-provided terms for the validation package |
 
 Official MSIXes are signed for distribution. Local PR validation builds are test-signed and may
 require their public test certificate to be trusted on the validation machine.
 
 ```powershell
 # Install the framework MSIX matching your device (ARM64 or x64).
-Add-AppxPackage .\AionInstructPreview.LanguageModel.Framework_<ver>_<arch>.msix
+Add-AppxPackage .\AionInstructPreview.LanguageModel.Framework_1.0.0.3_<arch>.msix
 
 # Verify it installed.
 Get-AppxPackage Microsoft.AionInstructPreview.Framework.1.0
 # Expected: IsFramework=True, Publisher=CN=Microsoft Corporation, ...
 
 # Drop the SDK NuGet into this repo's local feed.
-copy .\AionInstructPreview.Text.Framework.<ver>.nupkg .\nuget-local\
+New-Item -ItemType Directory -Path .\nuget-local -Force | Out-Null
+Copy-Item .\AionInstructPreview.Text.Framework.1.0.1.nupkg .\nuget-local\
 ```
 
 ### 2. Build and run the sample
@@ -280,7 +299,11 @@ Both paths first need the SDK NuGet (next).
 
 ### Getting the SDK NuGet
 
-`AionInstructPreview.Text.Framework` isn't on nuget.org yet — consume it from this repo's signed GitHub releases. Download `AionInstructPreview.Text.Framework.<ver>.nupkg` from <https://github.com/microsoft/Aion-Instruct-Preview-Sample/releases>, drop it into a local feed folder next to your csproj (this sample uses `./nuget-local/`), and point NuGet at that folder in a `nuget.config` alongside the csproj:
+Download `AionInstructPreview.Text.Framework.1.0.1.nupkg` from
+[release v1.0.0.3](https://github.com/microsoft/Aion-Instruct-Preview-Sample/releases/tag/v1.0.0.3)
+and review the release EULA before use. The SDK contract is distributed through this signed
+GitHub release, not nuget.org. Place it in a local feed folder next to your csproj (this sample
+uses `./nuget-local/`) and point NuGet at that folder in a `nuget.config` alongside the csproj:
 
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
@@ -293,7 +316,7 @@ Both paths first need the SDK NuGet (next).
 </configuration>
 ```
 
-See [`nuget.config`](nuget.config) in this repo for the working version. Once the SDK NuGet lands on a public feed, swap the `aion-instruct-preview-local` entry for that feed's URL — the rest of your build pipeline doesn't change.
+See [`nuget.config`](nuget.config) in this repo for the working configuration.
 
 ### Required PackageReferences
 
@@ -321,7 +344,7 @@ With the feed and both [required PackageReferences](#required-packagereferences)
 | Surface | What it does |
 |---|---|
 | `AionInstructPreview.Text.Framework.props` (auto-imported) | Adds `AionInstructPreview.Text.winmd` to `$(CsWinRTInputs)`. CsWinRT projects the runtimeclasses into C# at build time. |
-| `AionInstructPreview.Text.Framework.targets` (auto-imported) | Before pack, injects the framework dependency with `MinVersion="1.0.0.3"` or raises an older minimum. Publisher defaults to the Microsoft Corporation subject used by the signed framework. Override `<AionInstructPreviewFrameworkPublisher>` only for a differently signed framework. |
+| `AionInstructPreview.Text.Framework.targets` (auto-imported) | During app manifest generation, injects the framework dependency with `MinVersion="1.0.0.3"` or raises an older minimum. Publisher defaults to the Microsoft Corporation subject used by the signed framework. Override `<AionInstructPreviewFrameworkPublisher>` only for a differently signed framework. |
 
 At runtime, Windows AppX resolves the framework dependency, loads `AionInstructPreview.Text.dll` out of the framework's deploy folder, and cross-package WinRT activation hands you the runtimeclasses.
 
@@ -397,7 +420,7 @@ before building.
 ```csharp
 using AionInstructPreview.Text;
 
-// Loads the model. Long-running on first launch (NPU compile), instant after.
+// Loads the model. First-run NPU compilation can take several minutes; valid caches are reused.
 using var model = await LanguageModel.CreateAsync();
 
 using var context = model.CreateContext(); // reuse for multi-turn history
@@ -466,7 +489,7 @@ Cross-link the WinAppSDK reference for full member docs:
 
 | Member | Sample usage |
 |---|---|
-| [`static CreateAsync()`](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.windows.ai.text.languagemodel.createasync?view=windows-app-sdk-2.0) | `AionInstructClient.CreateAsync` calls this once at startup; long-running on first launch (NPU compile). |
+| [`static CreateAsync()`](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.windows.ai.text.languagemodel.createasync?view=windows-app-sdk-2.0) | `AionInstructClient.CreateAsync` calls this once at startup. First-run NPU compilation can take several minutes; valid caches are reused. |
 | [`CreateContext()`](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.windows.ai.text.languagemodel.createcontext?view=windows-app-sdk-2.0) | Opens a fresh conversation context. Called once on startup and again on "New conversation". |
 | `CreateContext(String)` | Opens a context with a **system prompt** that steers every turn in that conversation. The sample's "System prompt" expander maps to this overload. A context is immutable once created, so a changed prompt only takes effect on the next `CreateContext` — which is why the UI applies it via "New conversation". |
 | [`GenerateResponseAsync(LanguageModelContext, String, LanguageModelOptions)`](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.windows.ai.text.languagemodel.generateresponseasync?view=windows-app-sdk-2.0) | Streaming generation rooted in the session context — every chat send hits this overload with explicit options preserving prior sampling settings. Progress delivers text chunks; awaiting the operation returns the final `LanguageModelResponseResult`. |
@@ -523,7 +546,7 @@ description uses the same delta contract.
 
 ### Content moderation
 
-The moderation follow-up uses the text content moderation model (TCM), image content moderation
+The SDK uses the text content moderation model (TCM), image content moderation
 model (ICM), and inbox blocklists. Default options enable filtering for prompts, generated text,
 images, and text extracted from images. Filters are not a guarantee of safe or accurate output.
 `PromptMaxAllowedSeverityLevel` and `ResponseMaxAllowedSeverityLevel` configure text categories
@@ -565,7 +588,8 @@ Runtime validation requires matching moderation models and framework on supporte
 
 The **Describe image** tab uses `AionInstructPreview.Imaging`, which mirrors
 [`Microsoft.Windows.AI.Imaging`](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.windows.ai.imaging?view=windows-app-sdk-2.0).
-As with the text API, porting to the inbox stack is a `using` change.
+The preview implements a subset of the inbox API; verify supported members and behavior when
+porting to the inbox stack.
 
 ```csharp
 using AionInstructPreview.Imaging;
@@ -607,15 +631,14 @@ them onto a near-miss would feed the encoder swapped channels. Convert before yo
 > - **Moderation is enabled by default.** `DescribeAsync` honors `ContentFilterOptions`.
 >   Image, extracted-text, and generated-description blocks have separate result statuses.
 >   See [Content moderation](#content-moderation) for streaming limits and failure handling.
-> - **OCR differs from the inbox stack.** Text in the image is extracted with the inbox
->   `Windows.Media.Ocr` engine rather than the OneOCR model the shipping stack uses, because
->   OneOCR's model key can't be redistributed in a sideloadable package. Expect lower text
->   fidelity on text-dense images. OCR is best-effort: a failure yields an empty string and
->   description continues.
-> - **Description accuracy is under investigation.** Descriptions are fluent but can be
->   incorrectly grounded relative to the shipping in-box implementation. This is being tracked
->   as a vision-model/projector version-pairing issue. Treat image description in this preview as
->   an **API-compatibility** surface, not a quality baseline.
+> - **OCR differs from the Windows delivery.** This validation package uses `Windows.Media.Ocr`
+>   for text extraction rather than OneOCR. Text recognition may differ, particularly on
+>   text-dense images. An unavailable OCR engine or recognition failure fails the operation rather
+>   than bypassing text-in-image moderation. No detected text is a valid result.
+> - **Description accuracy.** Image descriptions may omit details, misinterpret content, or
+>   include information not present in the image. Evaluate accuracy and grounding in your
+>   application scenarios; this validation package is not a quality baseline for the final
+>   Windows delivery.
 
 ---
 
@@ -653,13 +676,19 @@ Start here if `Bootstrap.ps1`, the build, or the app fails.
 - **`NuGet restore` fails with package not found** → put `AionInstructPreview.Text.Framework.1.0.1.nupkg` in `./nuget-local/`. This sample uses the exact range `[1.0.1]`.
 - **Bootstrap reports a conflicting cached `1.0.1` SDK** → NuGet does not replace the global
   cache when a local package with the same version changes. Use a newly versioned SDK package,
-  or set `NUGET_PACKAGES` to a new existing empty directory for this validation run. Bootstrap
+  or create a new, empty directory and set `NUGET_PACKAGES` to it for this validation run. Bootstrap
   checks the effective cache selected by the project's restore settings, including
   `globalPackagesFolder` in `-NuGetConfig`; `NUGET_PACKAGES` retains its NuGet precedence.
   Bootstrap does not delete shared package caches.
-- **App crashes immediately with class-not-registered** → cross-package WinRT activation can't find the runtimeclasses. The framework MSIX must be installed (its cert is imported when you first install it), and the consumer must have package identity — `dotnet run` provides that via its development registration.
-- **Stale NuGet cache after a release bump** → `Remove-Item -Recurse -Force "$env:USERPROFILE\.nuget\packages\aioninstructpreview.text.framework"`, then rebuild.
-- **`Bootstrap.ps1` fails to download the release** → confirm a release exists at <https://github.com/microsoft/Aion-Instruct-Preview-Sample/releases>. If you're behind a corporate proxy, set `HTTPS_PROXY` and re-run. You can also download the three assets manually from that page (see [Manual install](#manual-install-what-bootstrapps1-does)).
+- **App crashes immediately with class-not-registered** → verify the architecture-matching Aion
+  framework and Windows App Runtime 2 are installed. Packaged apps need both dependencies in
+  their package graph; `dotnet run` supplies package identity. Unpackaged apps must call
+  `FrameworkDependency.EnsureLoaded()` before WinRT activation. Test-signed packages may require
+  explicit certificate trust; installing an MSIX does not automatically import its certificate.
+- **`Bootstrap.ps1` fails to download the release** → check
+  <https://github.com/microsoft/Aion-Instruct-Preview-Sample/releases>. If you're behind a
+  corporate proxy, set `HTTPS_PROXY` and re-run. You can also download the architecture-matching
+  MSIX and SDK NuGet manually (see [Manual install](#manual-install-what-bootstrapps1-does)).
 - **You edited source code but the app didn't change** → `dotnet run` rebuilds and re-registers every time, so a normal re-run picks up your edits. If a stale signed MSIX of the same package is installed, remove it first: `Get-AppxPackage AionInstructPreviewChat | Remove-AppxPackage`.
 
 ---
@@ -701,7 +730,7 @@ Aion-Instruct-Preview-Sample/
 ├── Package.appxmanifest             # MSIX identity. PackageDependency injected at build.
 ├── AionInstructPreview.Chat.csproj               # .NET 9 WinUI 3 packaged csproj
 ├── nuget.config                     # Feeds: nuget.org + ./nuget-local/
-├── nuget-local/                     # Drop the SDK pipeline's .nupkg here
+├── nuget-local/                     # SDK NuGet from the release (Bootstrap populates this)
 ├── Bootstrap.ps1                    # One-shot quickstart (download framework, build, run)
 ├── docs/
 │   ├── prompt-guide.md              # Prompt evaluation and optimization guidance
