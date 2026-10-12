@@ -65,6 +65,9 @@
     <!-- Use the custom Main() in App.xaml.cs so the app can enforce single-instancing before XAML startup. -->
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
 
+    <!-- Declares per-monitor DPI awareness; without it the window is blurry on scaled displays. -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+
     <DefaultLanguage>en-US</DefaultLanguage>
   </PropertyGroup>
 

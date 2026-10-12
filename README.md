@@ -715,6 +715,7 @@ diagnostic's selected EP, catalog version, and loaded-module paths in a bug repo
 ```
 Aion-Instruct-Preview-Sample/
 ├── App.xaml / App.xaml.cs           # WinAppSDK app entry
+├── app.manifest                     # Per-monitor DPI awareness, so text is sharp when scaled
 ├── MainWindow.xaml / .cs            # Chat + Describe image tabs, Mica, custom title bar
 ├── Controls/
 │   └── TypingIndicator.xaml(.cs)    # Three-dot pulsing "Aion Instruct Preview is thinking" indicator
