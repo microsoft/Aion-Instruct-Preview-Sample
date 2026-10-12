@@ -298,8 +298,10 @@ public sealed partial class MarkdownView : UserControl
                 rowIndex++;
             }
 
-            // A wide table scrolls sideways instead of overflowing the chat bubble.
-            return new ScrollViewer
+            // A wide table scrolls sideways instead of overflowing the chat bubble. The
+            // scrollbar is drawn over the content, so a table that can scroll keeps room for
+            // it under the last row.
+            var scroller = new ScrollViewer
             {
                 Content = grid,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
@@ -307,6 +309,19 @@ public sealed partial class MarkdownView : UserControl
                 VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 VerticalScrollMode = ScrollMode.Disabled,
             };
+            scroller.SizeChanged += (_, _) => ReserveScrollBarSpace(scroller);
+            grid.SizeChanged += (_, _) => ReserveScrollBarSpace(scroller);
+            return scroller;
+        }
+
+        private static void ReserveScrollBarSpace(ScrollViewer scroller)
+        {
+            double size = Application.Current.Resources.TryGetValue("ScrollBarSize", out object value) && value is double d ? d : 12;
+            var padding = new Thickness(0, 0, 0, scroller.ScrollableWidth > 0 ? size : 0);
+            if (scroller.Padding != padding)
+            {
+                scroller.Padding = padding;
+            }
         }
 
         private static TextAlignment AlignmentOf(Table table, int column) =>
