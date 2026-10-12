@@ -56,7 +56,7 @@ public sealed class Message : INotifyPropertyChanged
             // Typing dots are shown when streaming + empty; toggling Text
             // affects that derived visibility.
             Raise(nameof(TypingVisibility));
-            Raise(nameof(TextVisibility));
+            Raise(nameof(ReplyTextVisibility));
         }
     }
 
@@ -75,7 +75,7 @@ public sealed class Message : INotifyPropertyChanged
             Raise(nameof(IsAion));
             Raise(nameof(BubbleAlignment));
             Raise(nameof(TypingVisibility));
-            Raise(nameof(TextVisibility));
+            Raise(nameof(ReplyTextVisibility));
         }
     }
 
@@ -161,8 +161,14 @@ public sealed class Message : INotifyPropertyChanged
         (Role == MessageRole.Aion && _status == MessageStatus.Streaming && _text.Length == 0)
             ? Visibility.Visible : Visibility.Collapsed;
 
-    public Visibility TextVisibility =>
-        TypingVisibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
+    // What the user typed stays plain text; Aion Instruct Preview's replies render as
+    // Markdown. A reply's Markdown view stays collapsed while it has no text: the typing dots
+    // show before the first chunk, and a blocked or failed reply has its text cleared.
+    public Visibility UserTextVisibility =>
+        Role == MessageRole.User ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility ReplyTextVisibility =>
+        (Role == MessageRole.Aion && _text.Length > 0) ? Visibility.Visible : Visibility.Collapsed;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

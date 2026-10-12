@@ -181,6 +181,10 @@ API reference: README → [API surface used](../README.md#api-surface-used).
   suggest distributing it; it's a developer preview, not for redistribution.
 - **Don't add MSIX signing/`.pfx`/packaging knobs** to the sample. The dev loop is `dotnet run`
   (loose-layout dev registration); a signing cert is intentionally not used.
+- **Keep `Controls/MarkdownView.cs` faithful and offline.** It must never drop text (anything it
+  doesn't style shows as its Markdown source), and must never create `Hyperlink` or `Image`
+  elements or render HTML: a reply could otherwise make the app fetch or open a URL the model
+  wrote.
 - **Stay on a feature branch** for changes; open PRs against the repo's default branch.
 
 ## Where to look

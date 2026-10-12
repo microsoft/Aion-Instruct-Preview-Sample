@@ -462,6 +462,15 @@ background-thread Progress callback back to the UI thread via `DispatcherQueue` 
 unpackaged equivalent, [`unpackaged-wpf/MainWindow.xaml.cs`](unpackaged-wpf/MainWindow.xaml.cs) shows
 the identical API driving a plain WPF window.
 
+**Rendering replies.** The model often formats its answers as Markdown. The WinUI app parses each
+reply with [Markdig](https://github.com/xoofx/markdig) and renders it with its own small
+[`MarkdownView`](Controls/MarkdownView.cs), re-rendering as chunks arrive; the user's own messages
+stay plain text. The view is built so that no content goes missing: anything it doesn't style
+appears as its Markdown source. It never creates links or images, so a reply can't make the app
+download or open a URL; link and image URLs show as text after the link text, and HTML shows as
+typed. Your own app doesn't need any of this to call the SDK, and the WPF and console samples show
+replies as plain text.
+
 ---
 
 ## API surface used
@@ -717,6 +726,7 @@ Aion-Instruct-Preview-Sample/
 ├── App.xaml / App.xaml.cs           # WinAppSDK app entry
 ├── MainWindow.xaml / .cs            # Chat + Describe image tabs, Mica, custom title bar
 ├── Controls/
+│   ├── MarkdownView.cs              # Renders replies as Markdown (Markdig); no links or images
 │   └── TypingIndicator.xaml(.cs)    # Three-dot pulsing "Aion Instruct Preview is thinking" indicator
 ├── Models/
 │   ├── Message.cs                   # One transcript entry; mutable Text for streaming

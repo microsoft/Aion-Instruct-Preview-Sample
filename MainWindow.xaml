@@ -33,11 +33,20 @@
                             Margin="0,0,0,8" />
                         <controls:TypingIndicator
                             Visibility="{x:Bind TypingVisibility, Mode=OneWay}" />
+                        <!-- What the user typed stays plain text. -->
                         <TextBlock
                             Text="{x:Bind Text, Mode=OneWay}"
-                            Visibility="{x:Bind TextVisibility, Mode=OneWay}"
+                            Visibility="{x:Bind UserTextVisibility}"
                             TextWrapping="Wrap"
                             IsTextSelectionEnabled="True"
+                            Foreground="{x:Bind ForegroundBrush}" />
+                        <!-- Replies render as Markdown, re-rendered as each chunk arrives.
+                             MarkdownView never drops text and never fetches or opens a URL;
+                             read the comment at the top of Controls/MarkdownView.cs before
+                             changing it. -->
+                        <controls:MarkdownView
+                            Text="{x:Bind Text, Mode=OneWay}"
+                            Visibility="{x:Bind ReplyTextVisibility, Mode=OneWay}"
                             Foreground="{x:Bind ForegroundBrush}" />
                         <TextBlock
                             Text="{x:Bind MetricsText, Mode=OneWay}"
