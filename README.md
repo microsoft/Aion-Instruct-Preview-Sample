@@ -465,11 +465,12 @@ the identical API driving a plain WPF window.
 **Rendering replies.** The model often formats its answers as Markdown. The WinUI app parses each
 reply with [Markdig](https://github.com/xoofx/markdig) and renders it with its own small
 [`MarkdownView`](Controls/MarkdownView.cs), re-rendering as chunks arrive; the user's own messages
-stay plain text. The view is built so that no content goes missing: anything it doesn't style
-appears as its Markdown source. It never creates links or images, so a reply can't make the app
-download or open a URL; link and image URLs show as text after the link text, and HTML shows as
-typed. Your own app doesn't need any of this to call the SDK, and the WPF and console samples show
-replies as plain text.
+stay plain text. Unchecking **Render replies as Markdown** under **Settings** shows each reply's raw
+text instead, for comparing the two. The view is built so that no content goes missing: anything
+it doesn't style appears as its Markdown source. It never creates links or images, so a reply
+can't make the app download or open a URL; link and image URLs show as text after the link text,
+and HTML shows as typed. Your own app doesn't need any of this to call the SDK, and the WPF and
+console samples show replies as plain text.
 
 ---
 
@@ -500,7 +501,7 @@ Cross-link the WinAppSDK reference for full member docs:
 |---|---|
 | [`static CreateAsync()`](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.windows.ai.text.languagemodel.createasync?view=windows-app-sdk-2.0) | `AionInstructClient.CreateAsync` calls this once at startup. First-run NPU compilation can take several minutes; valid caches are reused. |
 | [`CreateContext()`](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.windows.ai.text.languagemodel.createcontext?view=windows-app-sdk-2.0) | Opens a fresh conversation context. Called once on startup and again on "New conversation". |
-| `CreateContext(String)` | Opens a context with a **system prompt** that steers every turn in that conversation. The sample's "System prompt" expander maps to this overload. A context is immutable once created, so a changed prompt only takes effect on the next `CreateContext` — which is why the UI applies it via "New conversation". |
+| `CreateContext(String)` | Opens a context with a **system prompt** that steers every turn in that conversation. The sample's **System prompt** box, under **Settings**, maps to this overload. A context is immutable once created, so a changed prompt only takes effect on the next `CreateContext` — which is why the UI applies it via "New conversation". |
 | [`GenerateResponseAsync(LanguageModelContext, String, LanguageModelOptions)`](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.windows.ai.text.languagemodel.generateresponseasync?view=windows-app-sdk-2.0) | Streaming generation rooted in the session context — every chat send hits this overload with explicit options preserving prior sampling settings. Progress delivers text chunks; awaiting the operation returns the final `LanguageModelResponseResult`. |
 | [`GenerateResponseAsync(String)`](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.windows.ai.text.languagemodel.generateresponseasync?view=windows-app-sdk-2.0) | Context-less single-shot variant; supported by Aion Instruct Preview, not used by this sample. |
 | `GenerateResponseAsync(String, LanguageModelOptions)` | Context-less single-shot variant with explicit, non-null options. |

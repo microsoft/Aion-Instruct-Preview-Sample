@@ -19,6 +19,7 @@ public sealed class Message : INotifyPropertyChanged
     private string? _statusDetail;
     private GenerationMetrics? _metrics;
     private ImageSource? _image;
+    private bool _renderMarkdown = true;
 
     public Message(MessageRole role, string text, MessageStatus status, string? statusDetail = null)
     {
@@ -56,6 +57,7 @@ public sealed class Message : INotifyPropertyChanged
             // Typing dots are shown when streaming + empty; toggling Text
             // affects that derived visibility.
             Raise(nameof(TypingVisibility));
+            Raise(nameof(PlainTextVisibility));
             Raise(nameof(ReplyTextVisibility));
         }
     }
@@ -75,6 +77,22 @@ public sealed class Message : INotifyPropertyChanged
             Raise(nameof(IsAion));
             Raise(nameof(BubbleAlignment));
             Raise(nameof(TypingVisibility));
+            Raise(nameof(PlainTextVisibility));
+            Raise(nameof(ReplyTextVisibility));
+        }
+    }
+
+    // Whether a reply renders as Markdown or shows the raw text the model wrote. MainWindow
+    // sets it from the "Render replies as Markdown" switch, so the two can be compared.
+    public bool RenderMarkdown
+    {
+        get => _renderMarkdown;
+        set
+        {
+            if (_renderMarkdown == value) return;
+            _renderMarkdown = value;
+            Raise();
+            Raise(nameof(PlainTextVisibility));
             Raise(nameof(ReplyTextVisibility));
         }
     }
@@ -161,14 +179,17 @@ public sealed class Message : INotifyPropertyChanged
         (Role == MessageRole.Aion && _status == MessageStatus.Streaming && _text.Length == 0)
             ? Visibility.Visible : Visibility.Collapsed;
 
-    // What the user typed stays plain text; Aion Instruct Preview's replies render as
-    // Markdown. A reply's Markdown view stays collapsed while it has no text: the typing dots
-    // show before the first chunk, and a blocked or failed reply has its text cleared.
-    public Visibility UserTextVisibility =>
-        Role == MessageRole.User ? Visibility.Visible : Visibility.Collapsed;
+    // What the user typed is always plain text. A reply renders as Markdown, or as raw text
+    // while RenderMarkdown is off. The Markdown view stays collapsed while a reply has no
+    // text: the typing dots show before the first chunk, and a blocked or failed reply has its
+    // text cleared.
+    public Visibility PlainTextVisibility =>
+        (Role == MessageRole.User || (!_renderMarkdown && TypingVisibility == Visibility.Collapsed))
+            ? Visibility.Visible : Visibility.Collapsed;
 
     public Visibility ReplyTextVisibility =>
-        (Role == MessageRole.Aion && _text.Length > 0) ? Visibility.Visible : Visibility.Collapsed;
+        (Role == MessageRole.Aion && _renderMarkdown && _text.Length > 0)
+            ? Visibility.Visible : Visibility.Collapsed;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

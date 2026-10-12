@@ -33,10 +33,10 @@
                             Margin="0,0,0,8" />
                         <controls:TypingIndicator
                             Visibility="{x:Bind TypingVisibility, Mode=OneWay}" />
-                        <!-- What the user typed stays plain text. -->
+                        <!-- What the user typed, and replies while Markdown rendering is off. -->
                         <TextBlock
                             Text="{x:Bind Text, Mode=OneWay}"
-                            Visibility="{x:Bind UserTextVisibility}"
+                            Visibility="{x:Bind PlainTextVisibility, Mode=OneWay}"
                             TextWrapping="Wrap"
                             IsTextSelectionEnabled="True"
                             Foreground="{x:Bind ForegroundBrush}" />
@@ -194,10 +194,10 @@
                                 </Button>
                             </Grid>
 
-                            <!-- System prompt. Collapsed by default so it doesn't crowd the
-                                 input. Takes effect on the next New conversation, because it
-                                 is passed to CreateContext and a context is immutable once
-                                 created. -->
+                            <!-- Settings: the system prompt and the Markdown switch. Collapsed by
+                                 default so it doesn't crowd the input. The system prompt takes
+                                 effect on the next New conversation, because it is passed to
+                                 CreateContext and a context is immutable once created. -->
                             <Expander
                                 Margin="20,8,20,0"
                                 HorizontalAlignment="Stretch"
@@ -208,11 +208,12 @@
                                             FontFamily="{ThemeResource SymbolThemeFontFamily}"
                                             Glyph="&#xE713;"
                                             FontSize="14" />
-                                        <TextBlock Text="System prompt" />
+                                        <TextBlock Text="Settings" />
                                     </StackPanel>
                                 </Expander.Header>
                                 <StackPanel Spacing="8">
                                     <TextBox
+                                        Header="System prompt"
                                         PlaceholderText="e.g. You are a terse assistant. Answer in one sentence."
                                         Text="{x:Bind ViewModel.SystemPrompt, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                         IsEnabled="{x:Bind ViewModel.NewConversationButtonEnabled, Mode=OneWay}"
@@ -231,6 +232,14 @@
                                         Severity="Informational"
                                         Visibility="{x:Bind ViewModel.SystemPromptPendingVisibility, Mode=OneWay}"
                                         Message="This conversation is still using the previous system prompt. Start a new conversation to apply the change." />
+                                    <!-- Switches replies between rendered Markdown and the raw text
+                                         the model wrote, to compare the two. -->
+                                    <CheckBox
+                                        x:Name="RenderMarkdownToggle"
+                                        Content="Render replies as Markdown"
+                                        IsChecked="True"
+                                        Checked="OnRenderMarkdownToggled"
+                                        Unchecked="OnRenderMarkdownToggled" />
                                 </StackPanel>
                             </Expander>
 
