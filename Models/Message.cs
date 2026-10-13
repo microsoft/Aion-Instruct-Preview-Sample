@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
@@ -19,6 +20,7 @@ public sealed class Message : INotifyPropertyChanged
     private string? _statusDetail;
     private GenerationMetrics? _metrics;
     private ImageSource? _image;
+    private bool _renderMarkdown = true;
 
     public Message(MessageRole role, string text, MessageStatus status, string? statusDetail = null)
     {
@@ -27,18 +29,26 @@ public sealed class Message : INotifyPropertyChanged
         _status = status;
         _statusDetail = statusDetail;
         CreatedAt = DateTimeOffset.UtcNow;
+        RefreshThemeBrushes();
+    }
 
-        // Resolve theme brushes once at construction. Theme switching mid-
-        // session would require rebinding; acceptable trade-off for a sample
-        // (and avoids resource-key indirection in XAML, which x:Bind doesn't
-        // do natively).
+    // Resolves the bubble's brushes for the current theme. MainWindow calls this again when the
+    // theme changes, so messages already on screen switch colors along with everything else.
+    // They live here rather than in XAML because x:Bind can't look up a theme resource by a key
+    // chosen at runtime.
+    [MemberNotNull(nameof(BubbleBrush), nameof(ForegroundBrush))]
+    public void RefreshThemeBrushes()
+    {
         var resources = Application.Current.Resources;
-        BubbleBrush = (Brush)resources[role == MessageRole.User
+        BubbleBrush = (Brush)resources[Role == MessageRole.User
             ? "AccentFillColorDefaultBrush"
             : "ControlFillColorDefaultBrush"];
-        ForegroundBrush = (Brush)resources[role == MessageRole.User
+        ForegroundBrush = (Brush)resources[Role == MessageRole.User
             ? "TextOnAccentFillColorPrimaryBrush"
             : "TextFillColorPrimaryBrush"];
+        Raise(nameof(BubbleBrush));
+        Raise(nameof(ForegroundBrush));
+        Raise(nameof(StatusDetailBrush));
     }
 
     public MessageRole Role { get; }
@@ -56,7 +66,8 @@ public sealed class Message : INotifyPropertyChanged
             // Typing dots are shown when streaming + empty; toggling Text
             // affects that derived visibility.
             Raise(nameof(TypingVisibility));
-            Raise(nameof(TextVisibility));
+            Raise(nameof(PlainTextVisibility));
+            Raise(nameof(ReplyTextVisibility));
         }
     }
 
@@ -75,7 +86,23 @@ public sealed class Message : INotifyPropertyChanged
             Raise(nameof(IsAion));
             Raise(nameof(BubbleAlignment));
             Raise(nameof(TypingVisibility));
-            Raise(nameof(TextVisibility));
+            Raise(nameof(PlainTextVisibility));
+            Raise(nameof(ReplyTextVisibility));
+        }
+    }
+
+    // Whether a reply renders as Markdown or shows the raw text the model wrote. MainWindow
+    // sets it from the "Render replies as Markdown" switch, so the two can be compared.
+    public bool RenderMarkdown
+    {
+        get => _renderMarkdown;
+        set
+        {
+            if (_renderMarkdown == value) return;
+            _renderMarkdown = value;
+            Raise();
+            Raise(nameof(PlainTextVisibility));
+            Raise(nameof(ReplyTextVisibility));
         }
     }
 
@@ -151,8 +178,8 @@ public sealed class Message : INotifyPropertyChanged
         Role == MessageRole.User ? HorizontalAlignment.Right : HorizontalAlignment.Left;
 
     // Direct Brush bindings so XAML can use {x:Bind} without a converter.
-    public Brush BubbleBrush { get; }
-    public Brush ForegroundBrush { get; }
+    public Brush BubbleBrush { get; private set; }
+    public Brush ForegroundBrush { get; private set; }
 
     // "Aion Instruct Preview is thinking" dots: shown when the bubble is a streaming Aion Instruct Preview
     // reply that hasn't produced any text yet. Once the first text chunk arrives,
@@ -161,8 +188,17 @@ public sealed class Message : INotifyPropertyChanged
         (Role == MessageRole.Aion && _status == MessageStatus.Streaming && _text.Length == 0)
             ? Visibility.Visible : Visibility.Collapsed;
 
-    public Visibility TextVisibility =>
-        TypingVisibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
+    // What the user typed is always plain text. A reply renders as Markdown, or as raw text
+    // while RenderMarkdown is off. The Markdown view stays collapsed while a reply has no
+    // text: the typing dots show before the first chunk, and a blocked or failed reply has its
+    // text cleared.
+    public Visibility PlainTextVisibility =>
+        (Role == MessageRole.User || (!_renderMarkdown && TypingVisibility == Visibility.Collapsed))
+            ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility ReplyTextVisibility =>
+        (Role == MessageRole.Aion && _renderMarkdown && _text.Length > 0)
+            ? Visibility.Visible : Visibility.Collapsed;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

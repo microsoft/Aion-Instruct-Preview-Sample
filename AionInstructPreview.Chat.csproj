@@ -89,6 +89,12 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+
+    <!--
+      Parses replies for Controls/MarkdownView.cs, which renders them as Markdown.
+      An app doesn't need it to call the SDK.
+    -->
+    <PackageReference Include="Markdig" Version="1.4.0" />
   </ItemGroup>
 
   <ItemGroup>

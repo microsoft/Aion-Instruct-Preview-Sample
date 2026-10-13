@@ -14,6 +14,9 @@ namespace AionInstructPreview.Chat;
 
 public sealed partial class MainWindow : Window
 {
+    // Mirrors the "Render replies as Markdown" switch, so new replies follow it too.
+    private bool _renderMarkdown = true;
+
     public ChatViewModel ViewModel { get; }
 
     public MainWindow()
@@ -42,13 +45,26 @@ public sealed partial class MainWindow : Window
         ViewModel.ImageMessages.CollectionChanged += OnMessagesChanged;
         ViewModel.PropertyChanged += OnViewModelPropertyChanged;
 
+        // Messages resolve their brushes in code, so refresh them when the theme changes.
+        var root = (FrameworkElement)this.Content;
+        root.ActualThemeChanged += OnActualThemeChanged;
+
         this.Closed += (_, _) =>
         {
             ViewModel.Messages.CollectionChanged -= OnMessagesChanged;
             ViewModel.ImageMessages.CollectionChanged -= OnMessagesChanged;
             ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+            root.ActualThemeChanged -= OnActualThemeChanged;
             ViewModel.Dispose();
         };
+    }
+
+    private void OnActualThemeChanged(FrameworkElement sender, object args)
+    {
+        foreach (Message m in ViewModel.Messages.Concat(ViewModel.ImageMessages))
+        {
+            m.RefreshThemeBrushes();
+        }
     }
 
     // Return focus to the prompt box whenever input becomes enabled again --
@@ -71,10 +87,22 @@ public sealed partial class MainWindow : Window
         {
             foreach (Message m in e.NewItems)
             {
+                m.RenderMarkdown = _renderMarkdown;
                 m.PropertyChanged += OnMessageChanged;
             }
         }
         ScrollToBottom();
+    }
+
+    // The "Render replies as Markdown" switch: applies to every reply, in both tabs, and to
+    // replies that arrive later.
+    private void OnRenderMarkdownToggled(object sender, RoutedEventArgs e)
+    {
+        _renderMarkdown = ((CheckBox)sender).IsChecked == true;
+        foreach (Message m in ViewModel.Messages.Concat(ViewModel.ImageMessages))
+        {
+            m.RenderMarkdown = _renderMarkdown;
+        }
     }
 
     private void OnMessageChanged(object? sender, PropertyChangedEventArgs e)
