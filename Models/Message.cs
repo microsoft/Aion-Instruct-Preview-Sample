@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
@@ -28,18 +29,26 @@ public sealed class Message : INotifyPropertyChanged
         _status = status;
         _statusDetail = statusDetail;
         CreatedAt = DateTimeOffset.UtcNow;
+        RefreshThemeBrushes();
+    }
 
-        // Resolve theme brushes once at construction. Theme switching mid-
-        // session would require rebinding; acceptable trade-off for a sample
-        // (and avoids resource-key indirection in XAML, which x:Bind doesn't
-        // do natively).
+    // Resolves the bubble's brushes for the current theme. MainWindow calls this again when the
+    // theme changes, so messages already on screen switch colors along with everything else.
+    // They live here rather than in XAML because x:Bind can't look up a theme resource by a key
+    // chosen at runtime.
+    [MemberNotNull(nameof(BubbleBrush), nameof(ForegroundBrush))]
+    public void RefreshThemeBrushes()
+    {
         var resources = Application.Current.Resources;
-        BubbleBrush = (Brush)resources[role == MessageRole.User
+        BubbleBrush = (Brush)resources[Role == MessageRole.User
             ? "AccentFillColorDefaultBrush"
             : "ControlFillColorDefaultBrush"];
-        ForegroundBrush = (Brush)resources[role == MessageRole.User
+        ForegroundBrush = (Brush)resources[Role == MessageRole.User
             ? "TextOnAccentFillColorPrimaryBrush"
             : "TextFillColorPrimaryBrush"];
+        Raise(nameof(BubbleBrush));
+        Raise(nameof(ForegroundBrush));
+        Raise(nameof(StatusDetailBrush));
     }
 
     public MessageRole Role { get; }
@@ -169,8 +178,8 @@ public sealed class Message : INotifyPropertyChanged
         Role == MessageRole.User ? HorizontalAlignment.Right : HorizontalAlignment.Left;
 
     // Direct Brush bindings so XAML can use {x:Bind} without a converter.
-    public Brush BubbleBrush { get; }
-    public Brush ForegroundBrush { get; }
+    public Brush BubbleBrush { get; private set; }
+    public Brush ForegroundBrush { get; private set; }
 
     // "Aion Instruct Preview is thinking" dots: shown when the bubble is a streaming Aion Instruct Preview
     // reply that hasn't produced any text yet. Once the first text chunk arrives,

@@ -45,13 +45,26 @@ public sealed partial class MainWindow : Window
         ViewModel.ImageMessages.CollectionChanged += OnMessagesChanged;
         ViewModel.PropertyChanged += OnViewModelPropertyChanged;
 
+        // Messages resolve their brushes in code, so refresh them when the theme changes.
+        var root = (FrameworkElement)this.Content;
+        root.ActualThemeChanged += OnActualThemeChanged;
+
         this.Closed += (_, _) =>
         {
             ViewModel.Messages.CollectionChanged -= OnMessagesChanged;
             ViewModel.ImageMessages.CollectionChanged -= OnMessagesChanged;
             ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+            root.ActualThemeChanged -= OnActualThemeChanged;
             ViewModel.Dispose();
         };
+    }
+
+    private void OnActualThemeChanged(FrameworkElement sender, object args)
+    {
+        foreach (Message m in ViewModel.Messages.Concat(ViewModel.ImageMessages))
+        {
+            m.RefreshThemeBrushes();
+        }
     }
 
     // Return focus to the prompt box whenever input becomes enabled again --

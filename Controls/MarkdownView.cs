@@ -42,7 +42,14 @@ public sealed partial class MarkdownView : UserControl
 
     private readonly StackPanel _blocks = new() { Spacing = 8 };
 
-    public MarkdownView() => Content = _blocks;
+    public MarkdownView()
+    {
+        Content = _blocks;
+
+        // Brushes are looked up in code when the view renders, so render again when the theme
+        // changes; otherwise replies on screen keep the old theme's colors.
+        ActualThemeChanged += (_, _) => Render();
+    }
 
     public string Text
     {

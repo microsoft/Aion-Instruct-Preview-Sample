@@ -20,7 +20,7 @@
                     Padding="14,10"
                     CornerRadius="14"
                     Margin="0,4"
-                    Background="{x:Bind BubbleBrush}"
+                    Background="{x:Bind BubbleBrush, Mode=OneWay}"
                     BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
                     BorderThickness="1">
                     <StackPanel>
@@ -39,7 +39,7 @@
                             Visibility="{x:Bind PlainTextVisibility, Mode=OneWay}"
                             TextWrapping="Wrap"
                             IsTextSelectionEnabled="True"
-                            Foreground="{x:Bind ForegroundBrush}" />
+                            Foreground="{x:Bind ForegroundBrush, Mode=OneWay}" />
                         <!-- Replies render as Markdown, re-rendered as each chunk arrives.
                              MarkdownView never drops text and never fetches or opens a URL;
                              read the comment at the top of Controls/MarkdownView.cs before
@@ -47,14 +47,14 @@
                         <controls:MarkdownView
                             Text="{x:Bind Text, Mode=OneWay}"
                             Visibility="{x:Bind ReplyTextVisibility, Mode=OneWay}"
-                            Foreground="{x:Bind ForegroundBrush}" />
+                            Foreground="{x:Bind ForegroundBrush, Mode=OneWay}" />
                         <TextBlock
                             Text="{x:Bind MetricsText, Mode=OneWay}"
                             Visibility="{x:Bind MetricsVisibility, Mode=OneWay}"
                             FontSize="11"
                             Margin="0,4,0,0"
                             Opacity="0.7"
-                            Foreground="{x:Bind ForegroundBrush}" />
+                            Foreground="{x:Bind ForegroundBrush, Mode=OneWay}" />
                         <TextBlock
                             Text="{x:Bind StatusDetail, Mode=OneWay}"
                             Visibility="{x:Bind StatusDetailVisibility, Mode=OneWay}"
