@@ -26,6 +26,18 @@ public sealed record TextIntelligenceTableRow(IReadOnlyList<string> Columns)
 // Only messages authored by our input validation are safe to show verbatim.
 public sealed class TextInputValidationException(string message) : ArgumentException(message);
 
+public sealed class AdapterLoadException : Exception
+{
+    public LanguageModelLowRankAdapterLoadStatus Status { get; }
+
+    public AdapterLoadException(LanguageModelLowRankAdapterLoadStatus status, Exception? error)
+        : base("The adapter could not be loaded.", error)
+    {
+        Status = status;
+        HResult = error?.HResult ?? unchecked((int)0x8000FFFF);
+    }
+}
+
 public sealed class AionTextIntelligenceClient(LanguageModel model) : IDisposable
 {
     private LanguageModelLowRankAdapter? _adapter;
@@ -54,26 +66,26 @@ public sealed class AionTextIntelligenceClient(LanguageModel model) : IDisposabl
 
     public static string AdapterErrorDetail(Exception error)
     {
-        // Preserve native compatibility categories, never arbitrary native exception text.
-        var match = System.Text.RegularExpressions.Regex.Match(error.Message, @"\(PsResult=(-\d+)\)");
-        if (!match.Success || !int.TryParse(match.Groups[1].Value, out var code)) { return ErrorDetail(error); }
-        var reason = code switch
+        if (error is not AdapterLoadException load) { return ErrorDetail(error); }
+        var reason = load.Status switch
         {
-            -959 => "AdapterIncompatibleRetrainRequired: retrain or export an adapter compatible with this Aion Instruct base model",
-            -996 => "InvalidData: the adapter contents, metadata or tensor layout are invalid",
-            -998 => "InvalidFormat: the adapter format is not supported",
-            -999 => "InvalidSize: the adapter dimensions or data size are invalid",
-            -993 => "NotAvailable: adapter loading is not supported by this model",
-            _ => "Native adapter validation failed"
+            LanguageModelLowRankAdapterLoadStatus.Incompatible =>
+                "AdapterIncompatibleRetrainRequired: retrain or export an adapter compatible with this Aion Instruct base model",
+            LanguageModelLowRankAdapterLoadStatus.InvalidAdapter =>
+                "The adapter contents, format, metadata or tensor layout are invalid",
+            _ => "The adapter could not be loaded"
         };
-        return $"{reason} (PsResult={code}, HRESULT=0x{error.HResult:X8}).";
+        return $"{reason} ({load.Status}, HRESULT=0x{error.HResult:X8}).";
     }
 
     public async Task LoadAdapterAsync(string path)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         // Keep the old adapter if loading the replacement fails.
-        var loaded = await LanguageModelLowRankAdapter.CreateFromPathAsync(model, path);
+        var result = await LanguageModelLowRankAdapter.CreateFromPathAsync(model, path);
+        if (result.ExtendedError is { } error) { throw new AdapterLoadException(result.Status, error); }
+        var loaded = result.LowRankAdapter
+            ?? throw new AdapterLoadException(result.Status, null);
         if (_disposed)
         {
             ((IDisposable)loaded).Dispose();
@@ -135,7 +147,7 @@ public sealed class AionTextIntelligenceClient(LanguageModel model) : IDisposabl
                 break;
             case TextOperation.GenerateWithLoRA:
                 if (_adapter is null) { throw new InvalidOperationException("Load an Aion Instruct-compatible LoRA first."); }
-                pending = _adapter.GenerateResponseAsync(text, new LanguageModelOptions());
+                pending = model.GenerateResponseAsync(text, new LanguageModelOptions { LowRankAdapter = _adapter });
                 break;
             case TextOperation.GenerateBase:
                 pending = model.GenerateResponseAsync(text, new LanguageModelOptions());
@@ -163,16 +175,16 @@ public sealed class AionTextIntelligenceClient(LanguageModel model) : IDisposabl
     {
         var input = JsonSerializer.Deserialize<ConversationMessage[]>(text)
             ?? throw new TextInputValidationException("Enter a JSON array of participant/message objects.");
-        if (input.Length == 0 || input.Any(item => item is null ||
-            string.IsNullOrWhiteSpace(item.Participant) || string.IsNullOrWhiteSpace(item.Message)))
+        if (input.Any(item => item is null || item.Participant is null || item.Message is null))
         {
-            throw new TextInputValidationException("Each conversation item needs a participant and message.");
+            throw new TextInputValidationException("Each conversation item needs participant and message strings. Empty strings are skipped.");
         }
         if (input.Any(item => item.Participant.IndexOfAny(['\r', '\n']) >= 0 ||
             item.Participant.Contains("MessageId:", StringComparison.Ordinal) ||
-            item.Message.Contains("MessageId:", StringComparison.Ordinal)))
+            item.Message.Contains("MessageId:", StringComparison.Ordinal) ||
+            item.Participant.Contains('\0') || item.Message.Contains('\0')))
         {
-            throw new TextInputValidationException("Participants must be single-line. Neither field may contain the reserved MessageId: marker.");
+            throw new TextInputValidationException("Participants must be single-line. Neither field may contain null characters or the reserved MessageId: marker.");
         }
         return input;
     }

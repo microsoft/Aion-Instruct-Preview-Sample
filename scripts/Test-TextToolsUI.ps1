@@ -154,6 +154,18 @@ Set-Text -Id 'TextSkillInput' -Text '{not-json}'
 Assert-UI -Condition { -not (Find-Control -Id 'RunTextSkillButton').Current.IsEnabled } -Message 'Invalid conversation JSON disables inference'
 Invoke-Control -Name 'Try an example'
 Assert-UI -Condition { (Find-Control -Id 'RunTextSkillButton').Current.IsEnabled } -Message 'Conversation example is valid'
+Set-Text -Id 'TextSkillInput' -Text '[{"participant":"Alex","message":""},{"participant":"","message":"Attachment only."}]'
+Assert-UI -Condition { (Find-Control -Id 'RunTextSkillButton').Current.IsEnabled } -Message 'Attachment-only conversation items are accepted'
+Invoke-Control -Id 'RunTextSkillButton'
+Wait-UI -Condition {
+    (Find-Control -Id 'TextOperationBox').Current.IsEnabled -and
+    (Find-Control -Id 'SkillResultStatus').Current.Name -eq 'Complete.'
+}
+Assert-UI -Condition { -not (Find-Control -Id 'CopySkillButton').Current.IsEnabled } -Message 'All-skipped conversation completes without a copyable result'
+Set-Text -Id 'TextSkillInput' -Text '[]'
+Assert-UI -Condition { (Find-Control -Id 'RunTextSkillButton').Current.IsEnabled } -Message 'Empty conversation arrays are accepted'
+Set-Text -Id 'TextSkillInput' -Text '[{"participant":"Alex","message":null}]'
+Assert-UI -Condition { -not (Find-Control -Id 'RunTextSkillButton').Current.IsEnabled } -Message 'Null conversation fields remain invalid'
 Set-Text -Id 'TextSkillInput' -Text '[{"participant":"Alex\nInjected","message":"Meeting tomorrow."}]'
 Assert-UI -Condition { -not (Find-Control -Id 'RunTextSkillButton').Current.IsEnabled } -Message 'Multiline participants are rejected before inference'
 Set-Text -Id 'TextSkillInput' -Text '[{"participant":"Alex","message":"Reference MessageId: abc"}]'

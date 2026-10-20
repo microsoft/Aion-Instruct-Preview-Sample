@@ -130,6 +130,9 @@ Choose Summarize text, Summarize conversation, Rewrite, Rewrite with custom inst
 Convert text to table. Only the relevant controls appear: tone for Rewrite, an instruction for
 custom rewrite, and collapsed conversation options for conversation summary. **Try an example**
 fills a task-specific input. The action is disabled for empty or invalid input.
+Conversation JSON items need participant/message strings, but either string can be empty: the SDK
+skips those items, as with attachment-only emails. An empty array or all-skipped conversation completes
+with no summary. Null fields/items, multiline participants, and reserved message framing remain invalid.
 Conversation kind and language are explicitly advisory in this preview: native telemetry records
 them, but they do not select a prompt or translate output. Language defaults to empty.
 
@@ -139,6 +142,7 @@ LoRA validation. There are no adapter-loading controls on this tab.
 Results have a status and built-in-resource provenance. Tables have a header row and horizontal
 scrolling; **Copy** preserves the columns as CSV. Editing the task, input, or options clears stale
 results. Native TI output is fully postprocessed and moderated before display.
+Table failures use the SDK result's `ExtendedError`, not a successful-looking empty table.
 
 ### LoRA validation
 
@@ -618,10 +622,13 @@ Cross-link the WinAppSDK reference for full member docs:
 rows and columns. TI progress is final-only after native postprocessing and moderation, not
 token streaming. Budget queries reject busy models; retry after generation completes.
 
-`LanguageModelLowRankAdapter.CreateFromPathAsync(model, path)` loads a model-bound local adapter.
-Its `GenerateResponseAsync` uses the language-model API in single-turn mode. `LoadStatus` and
-`LoadMessage` retain accepted compatibility warnings. The sample keeps this adapter entirely
-separate from built-in TI tasks. See [validation workflows](#validate-text-intelligence-and-your-lora).
+`LanguageModelLowRankAdapter.CreateFromPathAsync(model, path)` returns a model-bound adapter-load
+result. Check `ExtendedError`, then use `LowRankAdapter` through `LanguageModelOptions.LowRankAdapter`
+with `model.GenerateResponseAsync`. `Status` distinguishes incompatibility, invalid adapter data,
+and other errors without parsing exception text. Successful adapters retain `LoadStatus` and
+`LoadMessage` compatibility warnings. The sample uses independent single-turn comparisons and keeps
+developer adapters separate from built-in TI tasks.
+See [validation workflows](#validate-text-intelligence-and-your-lora).
 
 ### [`LanguageModel`](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.windows.ai.text.languagemodel?view=windows-app-sdk-2.0)
 
@@ -652,9 +659,9 @@ context before disposing the old one, so a rejected system prompt preserves the 
 
 ### `LanguageModelOptions`
 
-`AionInstructPreview.Text.LanguageModelOptions` exposes only `Temperature`, `TopP`, `TopK`,
-and `ContentFilterOptions`. LoRAs use the separate `LanguageModelLowRankAdapter` handle rather
-than changing this existing options contract. New options default to
+`AionInstructPreview.Text.LanguageModelOptions` exposes `Temperature`, `TopP`, `TopK`,
+`ContentFilterOptions`, and optional `LowRankAdapter`. The adapter property is a versioned interface
+addition; the existing options interface stays binary-compatible. New options default to
 `Temperature = 0.9f`, `TopP = 0.9f`, and `TopK = 40`. The sample explicitly sets `Temperature = 0.5f`
 and retains `TopP = 0.9f` and `TopK = 40` to preserve its previous chat behavior. The prompt-only
 overload also retains those previous settings. Passing `null` options is rejected.
