@@ -5,8 +5,9 @@ ARM64 Snapdragon and x64 Intel Lunar Lake Copilot+ PCs. Text chunks stream into 
 they're generated; app-observed first-update
 latency and updates/sec are shown under each reply. A progress update is not an exact tokenizer token.
 
-Two tabs, two APIs: **Chat** drives `AionInstructPreview.Text` (multi-turn conversation, optional system
-prompt), and **Describe image** drives `AionInstructPreview.Imaging`. The preview follows the
+Four independent tabs: **Chat**, **Describe image**, **Text intelligence**, and **LoRA validation**.
+Text intelligence uses its built-in task adapters. LoRA validation loads developer-trained Aion Instruct
+adapters for language-model generation and comparison. The preview follows the
 corresponding Windows App SDK public contracts for its supported members; it does not expose the
 entire in-box API.
 
@@ -19,9 +20,10 @@ entire in-box API.
 > - **Performance.** The first-update latency and updates/sec shown in the app are **preliminary,
 >   app-observed streaming measurements — not tokenizer throughput or final model performance.**
 >   Runtime and model optimizations are underway.
-> - **Release compatibility.** Use framework **1.0.0.3** with SDK NuGet **1.0.1** from the
->   [published release](https://github.com/microsoft/Aion-Instruct-Preview-Sample/releases/tag/v1.0.0.3).
->   Bootstrap rejects older incompatible releases. The moderation behavior below does not
+> - **Branch compatibility.** This development branch requires framework **1.1.0.0** or newer and
+>   SDK NuGet **1.1.0** from the same build; these are not yet published.
+>   Use the local-artifact setup below. The public 1.0.0.3 release supports main's chat/image
+>   sample, not this TI branch. Bootstrap rejects older releases. Moderation does not
 >   establish RAI qualification.
 
 ## Developer validation limitations
@@ -45,8 +47,8 @@ validation package is not the final Windows delivery.
   compliance with the EU AI Act. The watermark may become visible when model output is pasted
   into certain applications or locations.
 - **LoRA compatibility.** Phi Silica-compatible LoRAs are not compatible with Aion Instruct. Use
-  Foundry Toolkit to create new custom LoRAs for Aion Instruct. This preview sample API does not
-  expose LoRA configuration.
+  Foundry Toolkit to create new custom LoRAs for Aion Instruct. This branch can load compatible
+  local safetensors exports for validation; successful loading is not quality or RAI qualification.
 - **Behavioral changes.** Aion Instruct is a new model and behaves differently from Phi Silica.
   Application developers must not rely on deterministic output.
 
@@ -65,6 +67,13 @@ guidance.
   Package. Review these terms before using the pre-release validation package.
 
 ## Quickstart
+
+On this unpublished development branch, supply the matching framework MSIX and NuGet build
+artifacts. The ordinary release Bootstrap path will reject the older public release until a TI
+release is published. For development-signed artifacts, trust the supplied public development
+certificate as directed by your build provider, install the MSIX with `Add-AppxPackage`, and put
+the matching candidate NuGet in `nuget-local` before building. SDK build scripts are not included
+in this sample repository.
 
 You need an **ARM64 Snapdragon or x64 Intel Lunar Lake
 [Copilot+ PC](https://learn.microsoft.com/windows/ai/npu-devices/)** running **Windows 11**, plus
@@ -101,7 +110,7 @@ pass **both** the signed framework MSIX for your device and the matching SDK con
 
 ```powershell
 .\Bootstrap.ps1 -FrameworkMsixPath '<path-to-ARM64-or-x64-framework.msix>' `
-    -SdkNuGetPath '<path-to-AionInstructPreview.Text.Framework.1.0.1.nupkg>'
+    -SdkNuGetPath '<path-to-AionInstructPreview.Text.Framework.1.1.0.nupkg>'
 ```
 
 This local mode does not require access to the SDK's private build feeds. The public quickstart
@@ -109,6 +118,113 @@ above uses the published GitHub release assets.
 If the supplied MSIX has the same version as the installed framework, bootstrap compares their
 package block maps before reusing it. Different contents require a newly versioned framework;
 bootstrap does not silently substitute the installed build.
+
+## Validate text intelligence and your LoRA
+
+Text intelligence and developer LoRA loading are separate top-level tabs, like Chat and
+Describe image. They share model execution but not adapter configuration or results.
+
+### Text intelligence
+
+Choose Summarize text, Summarize conversation, Rewrite, Rewrite with custom instruction, or
+Convert text to table. Only the relevant controls appear: tone for Rewrite, an instruction for
+custom rewrite, and collapsed conversation options for conversation summary. **Try an example**
+fills a task-specific input. The action is disabled for empty or invalid input.
+Conversation kind and language are explicitly advisory in this preview: native telemetry records
+them, but they do not select a prompt or translate output. Language defaults to empty.
+
+These skills always use their built-in resources, regardless of a developer adapter loaded in
+LoRA validation. There are no adapter-loading controls on this tab.
+
+Results have a status and built-in-resource provenance. Tables have a header row and horizontal
+scrolling; **Copy** preserves the columns as CSV. Editing the task, input, or options clears stale
+results. Native TI output is fully postprocessed and moderated before display.
+
+### LoRA validation
+
+Load a compatible adapter, enter your training prompt, and choose **Compare**. It runs the base
+model and then the LoRA with the same captured prompt and default sampling in independent
+single-turn calls. The two result panes keep separate statuses, outputs, and Copy buttons, and
+stack on narrow windows. You can also run either model separately. These calls do not mutate
+chat history. The native generation API uses stochastic sampling; outputs can vary across runs.
+
+Editing the prompt marks the comparison out of date; the original prompt remains available under
+**Prompt used for these results**. A blocked or failed pane has no text, but does not erase a
+valid result in the other pane. **Cancel** stops the active call and skips any remaining call.
+
+### Adapter state and keyboard controls
+
+The adapter bar is exclusive to **LoRA validation**. **Load LoRA...** selects a local safetensors
+file; after loading, it becomes **Replace LoRA...** and **Unload** appears. The SDK validates model
+identity/version and tensor layout. Failed replacement explicitly reports which old adapter
+remains active. Loading, replacing, or unloading clears only the LoRA comparison results.
+Text-intelligence results and options are preserved.
+
+The SDK preserves native compatibility outcomes:
+
+- **Loaded:** structural compatibility passed; this does not establish quality or safety.
+- **Revalidation recommended:** the adapter loaded, but the base model minor version changed.
+  A persistent warning asks you to revalidate accuracy and retrain if needed.
+- **Deprecated format:** when native accepts an older format, it loads with a warning to re-export.
+  This does not bypass the model's format restrictions; incompatible legacy formats are rejected.
+- **Incompatible / retraining required:** loading fails with the native result name and numeric
+  code. The previous adapter remains active after a failed replacement.
+
+Native validation may group model-name, schema, major-version and tensor incompatibilities into
+one result. The app preserves the reported reason but cannot promise finer detail than native
+provides. Expand **Native compatibility details** for its selectable diagnostic. The console also prints accepted
+adapter warnings to stderr.
+
+A custom LoRA is used only by **Run with LoRA only** and the adapted half of **Compare**, through
+the SDK's language-model generation APIs. Chat, image description, and text intelligence do not
+use it. Use the prompt format from training. Compatibility details live in the collapsed notes.
+
+- **Ctrl+Enter** runs the current tab's skill or both comparison models; Enter inserts a newline.
+- **Esc** cancels only the visible tab's running operation. Switching tabs does not cancel work.
+- Controls are disabled while loading or generating. Status updates raise live-region events;
+  manual Narrator/high-contrast/text-scaling qualification is still required.
+- Closing an adapter rejects new requests; an accepted request retains it until finished.
+
+The navigation regression test runs without launching the app:
+
+```powershell
+.\scripts\Test-FeatureNavigation.ps1
+```
+
+For interactive UI regression checks, launch this branch and pass its process ID to
+`scripts\Test-TextToolsUI.ps1`. The test changes task/input selections and runs inference. Optional
+`-AdapterPath` and `-IncompatibleAdapterPath` arguments also test the real picker, paired comparison,
+failed replacement, cancellation, and unloading. Use test adapters, not a live validation session.
+
+The shipped base model is identified in adapter metadata as `muffinformer_large_qdq`, version `2.1`.
+Use schema-v1 Aion Instruct-compatible safetensors
+metadata and matching tensor names/shapes; arbitrary Hugging Face or Phi Silica adapters are not
+compatible. Structural loading does not validate adapter quality, safety, or training provenance.
+Files remain on the device; this sample does not upload adapters or prompts.
+
+Conversation summary input is a JSON array:
+
+```json
+[
+  { "participant": "Alex", "message": "The meeting is Tuesday at ten." },
+  { "participant": "Robin", "message": "I will bring the project schedule." }
+]
+```
+
+The unpackaged console also supports the same operations:
+
+```powershell
+# Input text comes from a UTF-8 file. "-" means no custom adapter.
+dotnet run --project unpackaged-console -c Release -p:Platform=ARM64 -- `
+    --text-intelligence Summarize C:\inputs\article.txt
+dotnet run --project unpackaged-console -c Release -p:Platform=ARM64 -- `
+    --text-intelligence GenerateWithLoRA C:\inputs\prompt.txt C:\adapters\adapter.safetensors
+```
+
+Frameworks with the bundled adapters exceed GitHub's 2 GiB per-asset limit. Bootstrap supports
+`.msix.001`, `.msix.002`, etc. with a `.msix.parts.json` manifest. It verifies every part, rejoins
+the signed MSIX byte-for-byte, and then verifies its signature and identity before installation. Temporary download parts are removed after joining
+and on download/hash failure; the joined MSIX is retained for verification and installation.
 
 ---
 
@@ -222,7 +338,7 @@ A few notes on the steps in the [Quickstart](#quickstart) above:
 - **`Set-ExecutionPolicy`.** Required on a machine with the default `Restricted` policy — otherwise `.\Bootstrap.ps1` fails with *"Bootstrap.ps1 cannot be loaded because running scripts is disabled on this system"*, even after a clean `git clone`. It's scoped to the current process, needs no admin, and reverts when you close the window.
 - **What `Bootstrap.ps1` does.** Detects your architecture, checks supported hardware, installs
   Windows App Runtime 2 if needed, and enables Developer Mode if needed. It queries the latest
-  public release and stops if it predates framework `1.0.0.3`, installs or upgrades the matching
+  public release and stops if it predates framework `1.1.0.0`, installs or upgrades the matching
   framework MSIX, and prepares the SDK NuGet. It then builds and launches the app
   via `dotnet run`; the framework acquires a compatible catalog execution provider during model
   creation if needed. It never fetches private build-input EP packages.
@@ -248,15 +364,14 @@ This runtime supplies the imaging and content-safety types used by the SDK.
 
 ### 1. Install the Aion Instruct Preview release
 
-Download the matching artifacts from
-[release v1.0.0.3](https://github.com/microsoft/Aion-Instruct-Preview-Sample/releases/tag/v1.0.0.3).
+Use the matching TI build artifacts until the TI release is published.
 Choose one framework MSIX for your device and the SDK NuGet, and review the EULA before use:
 
 | Asset | Who needs it |
 |---|---|
-| `AionInstructPreview.LanguageModel.Framework_1.0.0.3_ARM64.msix` | ARM64 Snapdragon (catalog QNN) |
-| `AionInstructPreview.LanguageModel.Framework_1.0.0.3_x64.msix` | x64 Intel Lunar Lake (catalog OpenVINO); AMD support is coming soon |
-| `AionInstructPreview.Text.Framework.1.0.1.nupkg` | The SDK NuGet (arch-neutral) |
+| `AionInstructPreview.LanguageModel.Framework_1.1.0.0_ARM64.msix` | ARM64 Snapdragon (catalog QNN) |
+| `AionInstructPreview.LanguageModel.Framework_1.1.0.0_x64.msix` | x64 Intel Lunar Lake (catalog OpenVINO); AMD support is coming soon |
+| `AionInstructPreview.Text.Framework.1.1.0.nupkg` | The SDK NuGet (arch-neutral) |
 | `Aion-Instruct-Preview-Pre-Release-EULA.docx` | Legal-provided terms for the validation package |
 
 Official MSIXes are signed for distribution. Local PR validation builds are test-signed and may
@@ -264,7 +379,7 @@ require their public test certificate to be trusted on the validation machine.
 
 ```powershell
 # Install the framework MSIX matching your device (ARM64 or x64).
-Add-AppxPackage .\AionInstructPreview.LanguageModel.Framework_1.0.0.3_<arch>.msix
+Add-AppxPackage .\AionInstructPreview.LanguageModel.Framework_1.1.0.0_<arch>.msix
 
 # Verify it installed.
 Get-AppxPackage Microsoft.AionInstructPreview.Framework.1.0
@@ -272,7 +387,7 @@ Get-AppxPackage Microsoft.AionInstructPreview.Framework.1.0
 
 # Drop the SDK NuGet into this repo's local feed.
 New-Item -ItemType Directory -Path .\nuget-local -Force | Out-Null
-Copy-Item .\AionInstructPreview.Text.Framework.1.0.1.nupkg .\nuget-local\
+Copy-Item .\AionInstructPreview.Text.Framework.1.1.0.nupkg .\nuget-local\
 ```
 
 ### 2. Build and run the sample
@@ -299,10 +414,10 @@ Both paths first need the SDK NuGet (next).
 
 ### Getting the SDK NuGet
 
-Download `AionInstructPreview.Text.Framework.1.0.1.nupkg` from
-[release v1.0.0.3](https://github.com/microsoft/Aion-Instruct-Preview-Sample/releases/tag/v1.0.0.3)
-and review the release EULA before use. The SDK contract is distributed through this signed
-GitHub release, not nuget.org. Place it in a local feed folder next to your csproj (this sample
+Obtain `AionInstructPreview.Text.Framework.1.1.0.nupkg` from the matching TI build.
+Review the validation EULA before use. Official release contracts are distributed through signed
+GitHub release assets, not nuget.org; this candidate is not yet published. Place it in a local
+feed folder next to your csproj (this sample
 uses `./nuget-local/`) and point NuGet at that folder in a `nuget.config` alongside the csproj:
 
 ```xml
@@ -323,15 +438,15 @@ See [`nuget.config`](nuget.config) in this repo for the working configuration.
 An external project needs **both** of these `PackageReference`s in its csproj:
 
 ```xml
-<PackageReference Include="AionInstructPreview.Text.Framework" Version="[1.0.1]" />
+<PackageReference Include="AionInstructPreview.Text.Framework" Version="[1.1.0]" />
 <PackageReference Include="Microsoft.Windows.CsWinRT" Version="2.1.5" />
 ```
 
-Use the exact SDK range `[1.0.1]` rather than floating with `1.0.*`. The local feed is a folder you
+Use the exact SDK range `[1.1.0]` rather than a floating version. The local feed is a folder you
 populate by hand, so a wildcard silently resolves to whichever `.nupkg` happens to be sitting
 there — an older one is missing `AionInstructPreview.Imaging.winmd` and fails with `CS0246
 'ImageDescriptionGenerator' not found` rather than a version error. This sample requires
-**1.0.1** for the updated text API contract, as well as the imaging metadata.
+**1.1.0** for TI, LoRA warning APIs, and imaging metadata.
 
 The CsWinRT reference is **not** optional and **not** implicit. CsWinRT's build targets — the ones that run the source generator turning `AionInstructPreview.Text.winmd` into C# — only import when `Microsoft.Windows.CsWinRT` is referenced **directly** by the project. Picking it up transitively (e.g. via the Windows App SDK) does **not** import those build targets, so the generator never runs and you get a wall of `CS0246 'Aion Instruct Preview' / 'LanguageModel' not found`. This sample's csproj already has both references, which is why copying our csproj "just works" — but a project you wire up from scratch must add the CsWinRT reference itself.
 
@@ -344,7 +459,7 @@ With the feed and both [required PackageReferences](#required-packagereferences)
 | Surface | What it does |
 |---|---|
 | `AionInstructPreview.Text.Framework.props` (auto-imported) | Adds `AionInstructPreview.Text.winmd` to `$(CsWinRTInputs)`. CsWinRT projects the runtimeclasses into C# at build time. |
-| `AionInstructPreview.Text.Framework.targets` (auto-imported) | During app manifest generation, injects the framework dependency with `MinVersion="1.0.0.3"` or raises an older minimum. Publisher defaults to the Microsoft Corporation subject used by the signed framework. Override `<AionInstructPreviewFrameworkPublisher>` only for a differently signed framework. |
+| `AionInstructPreview.Text.Framework.targets` (auto-imported) | During app manifest generation, injects the framework dependency with `MinVersion="1.1.0.0"` or raises an older minimum. Publisher defaults to the Microsoft Corporation subject used by the signed framework. Override `<AionInstructPreviewFrameworkPublisher>` only for a differently signed framework. |
 
 At runtime, Windows AppX resolves the framework dependency, loads `AionInstructPreview.Text.dll` out of the framework's deploy folder, and cross-package WinRT activation hands you the runtimeclasses.
 
@@ -405,7 +520,7 @@ AddProcessDependency(
     arch);
 AddProcessDependency(
     "Microsoft.AionInstructPreview.Framework.1.0_8wekyb3d8bbwe",
-    (1UL << 48) | 3UL, // 1.0.0.3
+    (1UL << 48) | (1UL << 32), // 1.1.0.0
     arch);
 ```
 
@@ -482,7 +597,7 @@ from Windows App SDK 2.0, including `IAsyncOperationWithProgress` streaming sema
 preview namespace for both `LanguageModel` and `LanguageModelOptions`; the preview implements a
 subset, not every in-box member.
 
-**Migrating to SDK 1.0.1:** replace `GenerateResponseAsync(context, prompt)` with
+**Earlier SDK 1.0.1 migration:** replace `GenerateResponseAsync(context, prompt)` with
 `GenerateResponseAsync(context, prompt, options)`. Options cannot be `null`. To preserve this
 sample's previous behavior, use
 `new LanguageModelOptions { Temperature = 0.5f, TopP = 0.9f, TopK = 40 }`.
@@ -490,10 +605,23 @@ Preview-only diagnostics have been removed: results no longer expose `TokenCount
 `TimeToFirstToken`, or `DecodeDuration`, and the model no longer exposes `GetTokenCount`,
 `MaxPromptTokenCount`, or `ContextLength`. Measure app-observed timing locally instead; callback
 counts are progress updates, not exact token counts. Rebuild consumers with NuGet **1.0.1** and run
-against framework **1.0.0.3**. This is a breaking preview contract change; compatibility with
-previously built consumer binaries is not promised.
+against framework **1.0.0.3** for that earlier release. This branch instead requires NuGet
+**1.1.0** and framework **1.1.0.0** for text intelligence and LoRA APIs.
+The earlier preview contract change did not promise compatibility with previously built consumer binaries.
 
 Cross-link the WinAppSDK reference for full member docs:
+
+### Text intelligence and custom adapters
+
+`TextSummarizer` provides paragraph/conversation summaries and synchronous context-budget queries.
+`TextRewriter` supports tones and custom instructions. `TextToTableConverter` returns structured
+rows and columns. TI progress is final-only after native postprocessing and moderation, not
+token streaming. Budget queries reject busy models; retry after generation completes.
+
+`LanguageModelLowRankAdapter.CreateFromPathAsync(model, path)` loads a model-bound local adapter.
+Its `GenerateResponseAsync` uses the language-model API in single-turn mode. `LoadStatus` and
+`LoadMessage` retain accepted compatibility warnings. The sample keeps this adapter entirely
+separate from built-in TI tasks. See [validation workflows](#validate-text-intelligence-and-your-lora).
 
 ### [`LanguageModel`](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.windows.ai.text.languagemodel?view=windows-app-sdk-2.0)
 
@@ -525,7 +653,8 @@ context before disposing the old one, so a rejected system prompt preserves the 
 ### `LanguageModelOptions`
 
 `AionInstructPreview.Text.LanguageModelOptions` exposes only `Temperature`, `TopP`, `TopK`,
-and `ContentFilterOptions`. It does not expose LoRA configuration. New options default to
+and `ContentFilterOptions`. LoRAs use the separate `LanguageModelLowRankAdapter` handle rather
+than changing this existing options contract. New options default to
 `Temperature = 0.9f`, `TopP = 0.9f`, and `TopK = 40`. The sample explicitly sets `Temperature = 0.5f`
 and retains `TopP = 0.9f` and `TopK = 40` to preserve its previous chat behavior. The prompt-only
 overload also retains those previous settings. Passing `null` options is rejected.
@@ -682,8 +811,8 @@ Start here if `Bootstrap.ps1`, the build, or the app fails.
 ### Runtime and deployment
 
 - **`0x80073D19` "package family does not have any matching framework packages installed"** when deploying the consumer MSIX → the Aion Instruct Preview framework MSIX isn't installed. `Get-AppxPackage Microsoft.AionInstructPreview.Framework.1.0` should return a row.
-- **`NuGet restore` fails with package not found** → put `AionInstructPreview.Text.Framework.1.0.1.nupkg` in `./nuget-local/`. This sample uses the exact range `[1.0.1]`.
-- **Bootstrap reports a conflicting cached `1.0.1` SDK** → NuGet does not replace the global
+- **`NuGet restore` fails with package not found** → put `AionInstructPreview.Text.Framework.1.1.0.nupkg` in `./nuget-local/`. This sample uses the exact range `[1.1.0]`.
+- **Bootstrap reports a conflicting cached SDK** → NuGet does not replace the global
   cache when a local package with the same version changes. Use a newly versioned SDK package,
   or create a new, empty directory and set `NUGET_PACKAGES` to it for this validation run. Bootstrap
   checks the effective cache selected by the project's restore settings, including
@@ -726,7 +855,7 @@ diagnostic's selected EP, catalog version, and loaded-module paths in a bug repo
 Aion-Instruct-Preview-Sample/
 ├── App.xaml / App.xaml.cs           # WinAppSDK app entry
 ├── app.manifest                     # Per-monitor DPI awareness, so text is sharp when scaled
-├── MainWindow.xaml / .cs            # Chat + Describe image tabs, Mica, custom title bar
+├── MainWindow.xaml / .cs            # Chat, image, TI and LoRA tabs; Mica and title bar
 ├── Controls/
 │   ├── MarkdownView.cs              # Renders replies as Markdown (Markdig); no links or images
 │   └── TypingIndicator.xaml(.cs)    # Three-dot pulsing "Aion Instruct Preview is thinking" indicator
@@ -738,6 +867,7 @@ Aion-Instruct-Preview-Sample/
 │   └── ChatViewModel.cs             # Conversation, state machine, Send + Describe commands
 ├── AionInstructClient.cs                  # Async wrapper over AionInstructPreview.Text.LanguageModel
 ├── AionImageDescriptionClient.cs          # Async wrapper over AionInstructPreview.Imaging.ImageDescriptionGenerator
+├── AionTextIntelligenceClient.cs          # Built-in TI tasks and independent LoRA generation
 ├── Package.appxmanifest             # MSIX identity. PackageDependency injected at build.
 ├── AionInstructPreview.Chat.csproj               # .NET 9 WinUI 3 packaged csproj
 ├── nuget.config                     # Feeds: nuget.org + ./nuget-local/

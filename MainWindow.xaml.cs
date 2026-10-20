@@ -5,10 +5,12 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Automation.Peers;
 using AionInstructPreview.Chat.Models;
 using AionInstructPreview.Chat.ViewModels;
 using Windows.System;
 using Windows.UI.Core;
+using Windows.ApplicationModel.DataTransfer;
 
 namespace AionInstructPreview.Chat;
 
@@ -16,6 +18,8 @@ public sealed partial class MainWindow : Window
 {
     // Mirrors the "Render replies as Markdown" switch, so new replies follow it too.
     private bool _renderMarkdown = true;
+    private bool _textUiReady;
+    private Button? _lastTextAction;
 
     public ChatViewModel ViewModel { get; }
 
@@ -23,6 +27,10 @@ public sealed partial class MainWindow : Window
     {
         ViewModel = new ChatViewModel();
         this.InitializeComponent();
+        _textUiReady = true;
+        UpdateTextTaskUi();
+        TextIntelligenceView.PreviewKeyDown += OnTextToolsKeyDown;
+        LoRAView.PreviewKeyDown += OnTextToolsKeyDown;
         this.Title = "Aion Instruct Preview Chat";
 
         // Mica backdrop: translucent material that picks up the desktop wallpaper tint.
@@ -51,6 +59,7 @@ public sealed partial class MainWindow : Window
 
         this.Closed += (_, _) =>
         {
+            _textUiReady = false;
             ViewModel.Messages.CollectionChanged -= OnMessagesChanged;
             ViewModel.ImageMessages.CollectionChanged -= OnMessagesChanged;
             ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
@@ -75,9 +84,50 @@ public sealed partial class MainWindow : Window
     // (Focus is a no-op on a still-disabled control).
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (_textUiReady) { UpdateTextTaskUi(); }
+        FrameworkElement? announcement = e.PropertyName switch
+        {
+            nameof(ChatViewModel.TextIntelligenceStatus) => SkillResultStatus,
+            nameof(ChatViewModel.BaseStatus) => BaseResultStatus,
+            nameof(ChatViewModel.AdaptedStatus) => AdaptedResultStatus,
+            nameof(ChatViewModel.AdapterFeedback) => AdapterFeedbackText,
+            nameof(ChatViewModel.AdapterWarningMessage) => AdapterCompatibilityWarning,
+            _ => null
+        };
+        if (_textUiReady && announcement is not null)
+        {
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if (!_textUiReady) { return; }
+                var peer = FrameworkElementAutomationPeer.FromElement(announcement) ??
+                    FrameworkElementAutomationPeer.CreatePeerForElement(announcement);
+                peer?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
+            });
+        }
+        if (e.PropertyName == nameof(ChatViewModel.CanCancelTextIntelligence))
+        {
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if (!_textUiReady) { return; }
+                if (ViewModel.CanCancelTextIntelligence)
+                {
+                    var cancel = LoRAView.Visibility == Visibility.Visible ? CancelComparisonButton : CancelTextButton;
+                    cancel.Focus(FocusState.Programmatic);
+                }
+            });
+        }
+        if (e.PropertyName == nameof(ChatViewModel.TextToolsEnabled) && ViewModel.TextToolsEnabled &&
+            _lastTextAction is { } action)
+        {
+            _lastTextAction = null;
+            DispatcherQueue.TryEnqueue(() => { if (_textUiReady) { action.Focus(FocusState.Programmatic); } });
+        }
         if (e.PropertyName == nameof(ChatViewModel.InputEnabled) && ViewModel.InputEnabled)
         {
-            DispatcherQueue.TryEnqueue(() => PromptBox.Focus(FocusState.Programmatic));
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if (_textUiReady && ChatView.Visibility == Visibility.Visible) { PromptBox.Focus(FocusState.Programmatic); }
+            });
         }
     }
 
@@ -126,7 +176,7 @@ public sealed partial class MainWindow : Window
         });
     }
 
-    // Toggles the two feature views. They are siblings in the same Grid rather than
+    // Toggles the feature views. They are siblings in the same Grid rather than
     // separate Pages so the ViewModel, model client, and conversation context all stay
     // alive when switching (re-creating them would reload the model).
     private void OnNavSelectionChanged(
@@ -139,12 +189,244 @@ public sealed partial class MainWindow : Window
         }
 
         bool isChat = (item.Tag as string) == "chat";
+        bool isImage = (item.Tag as string) == "image";
         ChatView.Visibility = isChat ? Visibility.Visible : Visibility.Collapsed;
-        ImageView.Visibility = isChat ? Visibility.Collapsed : Visibility.Visible;
+        ImageView.Visibility = isImage ? Visibility.Visible : Visibility.Collapsed;
+        TextIntelligenceView.Visibility = (item.Tag as string) == "text" ? Visibility.Visible : Visibility.Collapsed;
+        LoRAView.Visibility = (item.Tag as string) == "lora" ? Visibility.Visible : Visibility.Collapsed;
 
         if (isChat && ViewModel.InputEnabled)
         {
             DispatcherQueue.TryEnqueue(() => PromptBox.Focus(FocusState.Programmatic));
+        }
+    }
+
+    private async void OnLoadLoRAClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var picker = new Windows.Storage.Pickers.FileOpenPicker();
+            picker.FileTypeFilter.Add(".safetensors");
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+            var file = await picker.PickSingleFileAsync();
+            if (file is not null)
+            {
+                _lastTextAction = LoadAdapterButton;
+                await ViewModel.LoadLoRAAsync(file.Path);
+            }
+        }
+        catch (Exception error)
+        {
+            var dialog = new ContentDialog
+            {
+                Title = "Couldn't open the LoRA",
+                Content = $"The LoRA picker failed (0x{error.HResult:X8}). Try again.",
+                CloseButtonText = "OK",
+                XamlRoot = Content.XamlRoot
+            };
+            await dialog.ShowAsync();
+        }
+    }
+    private void OnUnloadLoRAClick(object sender, RoutedEventArgs e)
+    {
+        ViewModel.UnloadLoRA();
+        LoadAdapterButton.Focus(FocusState.Programmatic);
+    }
+    private void OnCancelTextIntelligenceClick(object sender, RoutedEventArgs e) => ViewModel.CancelTextIntelligence();
+
+    private TextOperation SelectedTextTask => Enum.Parse<TextOperation>(
+        (string)((ComboBoxItem)TextOperationBox.SelectedItem).Tag);
+
+    private void OnTextLayoutSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (!_textUiReady) { return; }
+        TextTaskOptions.Orientation = e.NewSize.Width < 640 ? Orientation.Vertical : Orientation.Horizontal;
+    }
+
+    private void OnLoRALayoutSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (!_textUiReady) { return; }
+        var stacked = e.NewSize.Width < 900;
+        Grid.SetColumn(AdaptedResultCard, stacked ? 0 : 1);
+        Grid.SetRow(AdaptedResultCard, stacked ? 1 : 0);
+        ComparisonSecondColumn.Width = stacked ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
+        var orientation = e.NewSize.Width < 640 ? Orientation.Vertical : Orientation.Horizontal;
+        CompareActions.Orientation = orientation;
+    }
+
+    private void OnTextTaskChanged(object sender, SelectionChangedEventArgs e) => OnSkillSettingsChanged();
+    private void OnSkillInputChanged(object sender, TextChangedEventArgs e) => OnSkillSettingsChanged();
+    private void OnSummaryPointsChanged(NumberBox sender, NumberBoxValueChangedEventArgs e) => OnSkillSettingsChanged();
+    private void OnSummaryOptionsChanged(object sender, RoutedEventArgs e) => OnSkillSettingsChanged();
+
+    private void OnSkillSettingsChanged()
+    {
+        if (!_textUiReady) { return; }
+        if (ViewModel.TextToolsEnabled) { ViewModel.ClearSkillResult(); }
+        UpdateTextTaskUi();
+    }
+
+    private void OnComparisonPromptChanged(object sender, TextChangedEventArgs e)
+    {
+        if (!_textUiReady) { return; }
+        ViewModel.MarkComparisonOutOfDate();
+        UpdateTextTaskUi();
+    }
+
+    private void UpdateTextTaskUi()
+    {
+        var operation = SelectedTextTask;
+        var conversation = operation == TextOperation.SummarizeConversation;
+        RewriteToneBox.Visibility = operation == TextOperation.Rewrite ? Visibility.Visible : Visibility.Collapsed;
+        CustomRewriteInstruction.Visibility = operation == TextOperation.RewriteCustom ? Visibility.Visible : Visibility.Collapsed;
+        ConversationSettings.Visibility = conversation ? Visibility.Visible : Visibility.Collapsed;
+        TextSkillInput.Header = conversation ? "Conversation (JSON array)" : "Text";
+        TextSkillInput.PlaceholderText = conversation
+            ? "Try an example, or enter participant/message objects."
+            : operation == TextOperation.TextToTable ? "Paste text containing the data for your table." : "Paste the text to process.";
+        RunTextSkillButton.Content = operation switch
+        {
+            TextOperation.Summarize or TextOperation.SummarizeConversation => "Summarize",
+            TextOperation.TextToTable => "Create table",
+            _ => "Rewrite"
+        };
+        var validation = ValidateSkillInput();
+        SkillValidationMessage.Text = validation;
+        RunTextSkillButton.IsEnabled = ViewModel.TextToolsEnabled && validation.Length == 0;
+        var hasPrompt = !string.IsNullOrWhiteSpace(ComparisonPromptInput.Text);
+        CompareButton.IsEnabled = AdaptedOnlyButton.IsEnabled = ViewModel.TextToolsEnabled && hasPrompt && ViewModel.HasCustomAdapter;
+        BaseOnlyButton.IsEnabled = ViewModel.TextToolsEnabled && hasPrompt;
+        CompareValidationMessage.Text = !ViewModel.HasCustomAdapter ? "Load a LoRA to compare it with the base model." :
+            !hasPrompt ? "Enter the prompt you used during training." : string.Empty;
+        CopySkillButton.IsEnabled = ViewModel.TextIntelligenceOutput.Length > 0 || ViewModel.TableHeader.Count > 0;
+        CopyBaseButton.IsEnabled = ViewModel.BaseOutput.Length > 0;
+        CopyAdapterButton.IsEnabled = ViewModel.AdaptedOutput.Length > 0;
+    }
+
+    private string ValidateSkillInput()
+    {
+        if (string.IsNullOrWhiteSpace(TextSkillInput.Text)) { return "Enter text or try an example."; }
+        if (SelectedTextTask == TextOperation.RewriteCustom && string.IsNullOrWhiteSpace(CustomRewriteInstruction.Text))
+        {
+            return "Describe how you want the text rewritten.";
+        }
+        if (SelectedTextTask == TextOperation.SummarizeConversation &&
+            (!double.IsFinite(MaxSummaryPoints.Value) || MaxSummaryPoints.Value < 1 ||
+             MaxSummaryPoints.Value > 100 || MaxSummaryPoints.Value != Math.Truncate(MaxSummaryPoints.Value)))
+        {
+            return "Use a whole number from 1 to 100 for max key points.";
+        }
+        try
+        {
+            AionTextIntelligenceClient.ValidateInput(SelectedTextTask, TextSkillInput.Text, CustomRewriteInstruction.Text);
+            return string.Empty;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return "Enter a valid JSON array. Try the example to see the format.";
+        }
+        catch (TextInputValidationException error) { return error.Message; }
+    }
+
+    private void OnInsertTextExampleClick(object sender, RoutedEventArgs e)
+    {
+        TextSkillInput.Text = SelectedTextTask switch
+        {
+            TextOperation.SummarizeConversation => "[\n  { \"participant\": \"Alex\", \"message\": \"The meeting is Tuesday at ten.\" },\n  { \"participant\": \"Robin\", \"message\": \"I will bring the project schedule.\" }\n]",
+            TextOperation.TextToTable => "Apples cost 3 dollars and weigh 1 kilogram. Pears cost 4 dollars and weigh 2 kilograms.",
+            TextOperation.Rewrite or TextOperation.RewriteCustom => "I will send you the meeting notes tomorrow. Please let me know if you have any questions.",
+            _ => "The public library reopened on Monday after a renovation. It now has new reading rooms and more study desks. Visitors can borrow books and use free internet access."
+        };
+        if (SelectedTextTask == TextOperation.RewriteCustom && string.IsNullOrWhiteSpace(CustomRewriteInstruction.Text))
+        {
+            CustomRewriteInstruction.Text = "Make this shorter while preserving the meaning.";
+        }
+    }
+
+    private async void OnRunTextIntelligenceClick(object sender, RoutedEventArgs e)
+    {
+        if (!ViewModel.TextToolsEnabled || ValidateSkillInput().Length != 0) { return; }
+        var options = new global::AionInstructPreview.Text.ConversationSummaryOptions();
+        if (SelectedTextTask == TextOperation.SummarizeConversation)
+        {
+            options.InputKind = ConversationInputKind.SelectedIndex == 0
+                ? global::AionInstructPreview.Text.InputKind.Email : global::AionInstructPreview.Text.InputKind.GeneralConversation;
+            options.MaxKeyPoints = (uint)MaxSummaryPoints.Value;
+            options.IncludeMessageCitations = SummaryCitations.IsChecked == true;
+            options.IncludeParticipantAttribution = SummaryAttribution.IsChecked == true;
+            options.Language = SummaryLanguage.Text;
+        }
+        _lastTextAction = RunTextSkillButton;
+        await ViewModel.RunTextIntelligenceAsync(
+            SelectedTextTask, TextSkillInput.Text,
+            (global::AionInstructPreview.Text.TextRewriteTone)RewriteToneBox.SelectedItem,
+            CustomRewriteInstruction.Text, options);
+    }
+
+    private async void OnRunComparisonClick(object sender, RoutedEventArgs e)
+    {
+        var button = (Button)sender;
+        var tag = (string)button.Tag;
+        if (!ViewModel.TextToolsEnabled || string.IsNullOrWhiteSpace(ComparisonPromptInput.Text) ||
+            (tag != "base" && !ViewModel.HasCustomAdapter))
+        {
+            UpdateTextTaskUi();
+            return;
+        }
+        _lastTextAction = button;
+        await ViewModel.RunComparisonAsync(ComparisonPromptInput.Text, tag != "adapter", tag != "base");
+    }
+
+    private void OnTextToolsKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key == VirtualKey.Escape &&
+            ((TextIntelligenceView.Visibility == Visibility.Visible && ViewModel.IsSkillRunning) ||
+             (LoRAView.Visibility == Visibility.Visible && ViewModel.IsComparisonRunning)))
+        {
+            ViewModel.CancelTextIntelligence();
+            e.Handled = true;
+        }
+        else if (e.Key == VirtualKey.Enter &&
+            (InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control) & CoreVirtualKeyStates.Down) != 0)
+        {
+            e.Handled = true;
+            if (TextIntelligenceView.Visibility == Visibility.Visible)
+            {
+                OnRunTextIntelligenceClick(RunTextSkillButton, new RoutedEventArgs());
+            }
+            else if (LoRAView.Visibility == Visibility.Visible)
+            {
+                OnRunComparisonClick(CompareButton, new RoutedEventArgs());
+            }
+        }
+    }
+
+    private async void OnCopyTextResultClick(object sender, RoutedEventArgs e)
+    {
+        var text = ((Button)sender).Tag switch
+        {
+            "base" => ViewModel.BaseOutput,
+            "adapter" => ViewModel.AdaptedOutput,
+            _ => ViewModel.TableHeader.Count > 0
+                ? string.Join(Environment.NewLine,
+                    new[] { ViewModel.TableHeader }.Concat(ViewModel.TableRows.Select(row => row.Columns))
+                        .Select(row => string.Join(",", row.Select(cell => $"\"{cell.Replace("\"", "\"\"")}\""))))
+                : ViewModel.TextIntelligenceOutput
+        };
+        try
+        {
+            var package = new DataPackage();
+            package.SetText(text);
+            Clipboard.SetContent(package);
+        }
+        catch (Exception error)
+        {
+            await new ContentDialog
+            {
+                Title = "Couldn't copy the result",
+                Content = $"Couldn't access the clipboard (0x{error.HResult:X8}). Try again.",
+                CloseButtonText = "OK", XamlRoot = Content.XamlRoot
+            }.ShowAsync();
         }
     }
 

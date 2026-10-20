@@ -105,7 +105,7 @@
         <!-- Main content area. Loading / error overlays stack on top. -->
         <Grid Grid.Row="1">
 
-            <!-- The two features are separate APIs with separate state, so they get
+            <!-- The features are separate APIs with separate state, so they get
                  separate top-level views rather than sharing one crowded input row.
                  Chat owns a LanguageModelContext and accumulates history; image
                  description is stateless per call. -->
@@ -127,6 +127,8 @@
                             <FontIcon Glyph="&#xEB9F;" />
                         </NavigationViewItem.Icon>
                     </NavigationViewItem>
+                    <NavigationViewItem Content="Text intelligence" Tag="text" />
+                    <NavigationViewItem Content="LoRA validation" Tag="lora" />
                 </NavigationView.MenuItems>
 
                 <Grid>
@@ -366,6 +368,246 @@
                         </StackPanel>
                     </Grid>
 
+                    <ScrollViewer x:Name="TextIntelligenceView" Visibility="Collapsed" Padding="24"
+                                  HorizontalScrollBarVisibility="Disabled">
+                        <Grid x:Name="TextToolsLayout" MaxWidth="960" HorizontalAlignment="Stretch"
+                              SizeChanged="OnTextLayoutSizeChanged">
+                            <StackPanel Spacing="20">
+                                <TextBlock Text="Text intelligence" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                                <TextBlock Text="Summarize, rewrite or create a table using the built-in task adapters."
+                                           TextWrapping="Wrap" Opacity="0.75" />
+                                <StackPanel x:Name="TextSkillsView" Spacing="12">
+                                    <StackPanel x:Name="TextTaskOptions" Orientation="Horizontal" Spacing="12">
+                                        <ComboBox x:Name="TextOperationBox" Header="Task" SelectedIndex="0"
+                                                  SelectionChanged="OnTextTaskChanged" MaxWidth="360" HorizontalAlignment="Left"
+                                                  IsEnabled="{x:Bind ViewModel.TextToolsEnabled, Mode=OneWay}">
+                                            <ComboBoxItem Content="Summarize text" Tag="Summarize" />
+                                            <ComboBoxItem Content="Summarize conversation" Tag="SummarizeConversation" />
+                                            <ComboBoxItem Content="Rewrite" Tag="Rewrite" />
+                                            <ComboBoxItem Content="Rewrite with custom instruction" Tag="RewriteCustom" />
+                                            <ComboBoxItem Content="Convert text to table" Tag="TextToTable" />
+                                        </ComboBox>
+                                        <ComboBox x:Name="RewriteToneBox" Header="Tone" Visibility="Collapsed"
+                                                  ItemsSource="{x:Bind ViewModel.RewriteTones}" SelectedIndex="0"
+                                                  SelectionChanged="OnTextTaskChanged" MinWidth="150"
+                                                  IsEnabled="{x:Bind ViewModel.TextToolsEnabled, Mode=OneWay}" />
+                                    </StackPanel>
+                                    <TextBox x:Name="CustomRewriteInstruction" Header="Instruction" Visibility="Collapsed"
+                                             PlaceholderText="For example: make it shorter while preserving the meaning"
+                                             TextChanged="OnSkillInputChanged"
+                                             IsEnabled="{x:Bind ViewModel.TextToolsEnabled, Mode=OneWay}" />
+                                    <TextBox x:Name="TextSkillInput" Header="Text" AcceptsReturn="True"
+                                             TextWrapping="Wrap" MinHeight="160" MaxHeight="320"
+                                             PlaceholderText="Paste the text you want to summarize"
+                                             TextChanged="OnSkillInputChanged"
+                                             IsEnabled="{x:Bind ViewModel.TextToolsEnabled, Mode=OneWay}" />
+                                    <Button Content="Try an example" Click="OnInsertTextExampleClick"
+                                            IsEnabled="{x:Bind ViewModel.TextToolsEnabled, Mode=OneWay}" />
+                                    <Expander x:Name="ConversationSettings" Header="Conversation options"
+                                              Visibility="Collapsed" HorizontalAlignment="Stretch"
+                                              HorizontalContentAlignment="Stretch">
+                                        <StackPanel Spacing="12">
+                                            <ComboBox x:Name="ConversationInputKind" Header="Conversation kind (advisory)" SelectedIndex="0"
+                                                      SelectionChanged="OnTextTaskChanged"
+                                                      IsEnabled="{x:Bind ViewModel.TextToolsEnabled, Mode=OneWay}">
+                                                <ComboBoxItem Content="Email" />
+                                                <ComboBoxItem Content="General conversation" />
+                                            </ComboBox>
+                                            <NumberBox x:Name="MaxSummaryPoints" Header="Max key points" Value="6"
+                                                       Minimum="1" Maximum="100" ValueChanged="OnSummaryPointsChanged"
+                                                       IsEnabled="{x:Bind ViewModel.TextToolsEnabled, Mode=OneWay}" />
+                                            <TextBox x:Name="SummaryLanguage" Header="Language hint (advisory)" Text=""
+                                                     TextChanged="OnSkillInputChanged"
+                                                     IsEnabled="{x:Bind ViewModel.TextToolsEnabled, Mode=OneWay}" />
+                                            <TextBlock Text="Conversation kind and language are recorded only for telemetry in this preview. They do not change the prompt or translate the summary."
+                                                       TextWrapping="Wrap" Opacity="0.75" />
+                                            <CheckBox x:Name="SummaryCitations" Content="Message citations" IsChecked="True"
+                                                      Checked="OnSummaryOptionsChanged" Unchecked="OnSummaryOptionsChanged"
+                                                      IsEnabled="{x:Bind ViewModel.TextToolsEnabled, Mode=OneWay}" />
+                                            <CheckBox x:Name="SummaryAttribution" Content="Participant attribution"
+                                                      Checked="OnSummaryOptionsChanged" Unchecked="OnSummaryOptionsChanged"
+                                                      IsEnabled="{x:Bind ViewModel.TextToolsEnabled, Mode=OneWay}" />
+                                        </StackPanel>
+                                    </Expander>
+                                    <TextBlock x:Name="SkillValidationMessage" TextWrapping="Wrap"
+                                               AutomationProperties.LiveSetting="Polite" />
+                                    <Button x:Name="RunTextSkillButton" Content="Summarize" Click="OnRunTextIntelligenceClick"
+                                            IsEnabled="False" Style="{ThemeResource AccentButtonStyle}" />
+                                    <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                            BorderThickness="1" CornerRadius="8" Padding="16"
+                                            AutomationProperties.Name="Text skill result">
+                                        <StackPanel Spacing="8">
+                                            <Grid>
+                                                <TextBlock Text="Result" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                <Button x:Name="CopySkillButton" Content="Copy" Tag="skill"
+                                                        Click="OnCopyTextResultClick" HorizontalAlignment="Right" IsEnabled="False" />
+                                            </Grid>
+                                            <TextBlock Text="{x:Bind ViewModel.TextResultProvenance, Mode=OneWay}"
+                                                       Visibility="{x:Bind ViewModel.SkillProvenanceVisibility, Mode=OneWay}" TextWrapping="Wrap" Opacity="0.75" />
+                                            <TextBlock x:Name="SkillResultStatus" Text="{x:Bind ViewModel.TextIntelligenceStatus, Mode=OneWay}"
+                                                       AutomationProperties.LiveSetting="Polite" TextWrapping="Wrap" />
+                                            <TextBlock x:Name="SkillResultOutput" Text="{x:Bind ViewModel.TextIntelligenceOutput, Mode=OneWay}"
+                                                       Visibility="{x:Bind ViewModel.SkillOutputVisibility, Mode=OneWay}"
+                                                       TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                                            <ScrollViewer x:Name="TableResultScroller" HorizontalScrollBarVisibility="Auto" HorizontalScrollMode="Enabled"
+                                                          VerticalScrollBarVisibility="Disabled" VerticalScrollMode="Disabled"
+                                                          Visibility="{x:Bind ViewModel.TableVisibility, Mode=OneWay}"
+                                                          AutomationProperties.Name="Table result">
+                                                <StackPanel>
+                                                    <ItemsControl ItemsSource="{x:Bind ViewModel.TableHeader, Mode=OneWay}"
+                                                                  AutomationProperties.Name="Column headers">
+                                                        <ItemsControl.ItemsPanel>
+                                                            <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                                                        </ItemsControl.ItemsPanel>
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                                                        BorderThickness="1" Padding="8" Width="180">
+                                                                    <TextBlock Text="{Binding}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                    <ItemsControl ItemsSource="{x:Bind ViewModel.TableRows, Mode=OneWay}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <ItemsControl ItemsSource="{Binding Columns}" AutomationProperties.Name="{Binding AccessibleName}">
+                                                                    <ItemsControl.ItemsPanel>
+                                                                        <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                                                                    </ItemsControl.ItemsPanel>
+                                                                    <ItemsControl.ItemTemplate>
+                                                                        <DataTemplate>
+                                                                            <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                                                                    BorderThickness="1" Padding="8" Width="180">
+                                                                                <TextBlock Text="{Binding}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                                                                            </Border>
+                                                                        </DataTemplate>
+                                                                    </ItemsControl.ItemTemplate>
+                                                                </ItemsControl>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+                                            </ScrollViewer>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                                <StackPanel Visibility="{x:Bind ViewModel.SkillRunningVisibility, Mode=OneWay}" Spacing="8">
+                                    <ProgressBar IsIndeterminate="True" AutomationProperties.Name="Generating moderated text skill results" />
+                                    <TextBlock Text="Working - results appear after moderation." AutomationProperties.LiveSetting="Polite" />
+                                    <Button x:Name="CancelTextButton" Content="Cancel" Click="OnCancelTextIntelligenceClick"
+                                            IsEnabled="{x:Bind ViewModel.CanCancelTextIntelligence, Mode=OneWay}" />
+                                </StackPanel>
+                                <TextBlock Text="All requests remain on the device and are moderated. Custom adapters loaded on LoRA validation do not affect these skills."
+                                           TextWrapping="Wrap" Opacity="0.75" />
+                            </StackPanel>
+                        </Grid>
+                    </ScrollViewer>
+                    <ScrollViewer x:Name="LoRAView" Visibility="Collapsed" Padding="24" HorizontalScrollBarVisibility="Disabled">
+                        <Grid x:Name="LoRALayout" MaxWidth="960" HorizontalAlignment="Stretch" SizeChanged="OnLoRALayoutSizeChanged">
+                            <StackPanel Spacing="20">
+                                <TextBlock Text="LoRA validation" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1" CornerRadius="8" Padding="16">
+                                    <StackPanel Spacing="8">
+                                        <TextBlock x:Name="ActiveAdapterText" Text="{x:Bind ViewModel.AdapterStatus, Mode=OneWay}"
+                                                   ToolTipService.ToolTip="{x:Bind ViewModel.AdapterPath, Mode=OneWay}"
+                                                   TextWrapping="Wrap" FontWeight="SemiBold" />
+                                        <TextBlock Text="{x:Bind ViewModel.AdapterScope, Mode=OneWay}" TextWrapping="Wrap" Opacity="0.75" />
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <Button x:Name="LoadAdapterButton" Content="{x:Bind ViewModel.LoadAdapterLabel, Mode=OneWay}"
+                                                    Click="OnLoadLoRAClick" IsEnabled="{x:Bind ViewModel.TextToolsEnabled, Mode=OneWay}" />
+                                            <Button x:Name="UnloadAdapterButton" Content="Unload" Click="OnUnloadLoRAClick"
+                                                    Visibility="{x:Bind ViewModel.UnloadAdapterVisibility, Mode=OneWay}"
+                                                    IsEnabled="{x:Bind ViewModel.TextToolsEnabled, Mode=OneWay}" />
+                                            <ProgressRing Width="24" Height="24"
+                                                          IsActive="{x:Bind ViewModel.IsLoadingAdapter, Mode=OneWay}"
+                                                          Visibility="{x:Bind ViewModel.AdapterLoadingVisibility, Mode=OneWay}"
+                                                          AutomationProperties.Name="Loading adapter" />
+                                        </StackPanel>
+                                        <TextBlock x:Name="AdapterFeedbackText" Text="{x:Bind ViewModel.AdapterFeedback, Mode=OneWay}"
+                                                   Visibility="{x:Bind ViewModel.AdapterFeedbackVisibility, Mode=OneWay}"
+                                                   AutomationProperties.LiveSetting="Polite" TextWrapping="Wrap" />
+                                        <InfoBar x:Name="AdapterCompatibilityWarning" IsOpen="{x:Bind ViewModel.HasAdapterWarning, Mode=OneWay}"
+                                                 IsClosable="False" Severity="Warning" Title="Adapter loaded with a warning"
+                                                 Message="{x:Bind ViewModel.AdapterWarningMessage, Mode=OneWay}"
+                                                 AutomationProperties.LiveSetting="Polite">
+                                            <Expander Header="Native compatibility details" HorizontalAlignment="Stretch"
+                                                      HorizontalContentAlignment="Stretch">
+                                                <TextBlock x:Name="AdapterNativeDetails" Text="{x:Bind ViewModel.AdapterLoadDetails, Mode=OneWay}"
+                                                           TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                                            </Expander>
+                                        </InfoBar>
+                                    </StackPanel>
+                                </Border>
+                                <StackPanel x:Name="LoRACompareView" Spacing="12">
+                                    <TextBox x:Name="ComparisonPromptInput" Header="Prompt" AcceptsReturn="True"
+                                             PlaceholderText="Use the prompt format from your LoRA training"
+                                             TextWrapping="Wrap" MinHeight="140" MaxHeight="320" TextChanged="OnComparisonPromptChanged"
+                                             IsEnabled="{x:Bind ViewModel.TextToolsEnabled, Mode=OneWay}" />
+                                    <TextBlock Text="Compare runs the base model, then your LoRA, with the same prompt and default sampling. Results may vary between runs."
+                                               TextWrapping="Wrap" Opacity="0.75" />
+                                    <TextBlock x:Name="CompareValidationMessage" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                                    <StackPanel x:Name="CompareActions" Orientation="Horizontal" Spacing="8">
+                                        <Button x:Name="CompareButton" Content="Compare" Tag="both" Click="OnRunComparisonClick"
+                                                Style="{ThemeResource AccentButtonStyle}" IsEnabled="False" />
+                                        <Button x:Name="BaseOnlyButton" Content="Run base only" Tag="base" Click="OnRunComparisonClick" IsEnabled="False" />
+                                        <Button x:Name="AdaptedOnlyButton" Content="Run with LoRA only" Tag="adapter" Click="OnRunComparisonClick" IsEnabled="False" />
+                                    </StackPanel>
+                                    <InfoBar x:Name="ComparisonStaleWarning" IsOpen="{x:Bind ViewModel.ComparisonOutOfDate, Mode=OneWay}" IsClosable="False"
+                                             Severity="Warning" Title="Results are out of date"
+                                             Message="The prompt changed. Run again to compare the current prompt." />
+                                    <TextBlock Text="{x:Bind ViewModel.ComparisonProvenance, Mode=OneWay}"
+                                               Visibility="{x:Bind ViewModel.ComparisonDetailsVisibility, Mode=OneWay}" TextWrapping="Wrap" Opacity="0.75" />
+                                    <Expander Header="Prompt used for these results" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                              Visibility="{x:Bind ViewModel.ComparisonDetailsVisibility, Mode=OneWay}">
+                                        <TextBlock Text="{x:Bind ViewModel.ComparisonPrompt, Mode=OneWay}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                                    </Expander>
+                                    <Grid RowSpacing="12" ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition x:Name="ComparisonSecondColumn" Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                        <Border x:Name="BaseResultCard" Grid.Column="0" Padding="16" CornerRadius="8"
+                                                BorderThickness="1" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                                AutomationProperties.Name="Base model result">
+                                            <StackPanel Spacing="8">
+                                                <TextBlock Text="Base model" FontWeight="SemiBold" />
+                                                <TextBlock x:Name="BaseResultStatus" Text="{x:Bind ViewModel.BaseStatus, Mode=OneWay}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                                                <TextBlock x:Name="BaseResultOutput" Text="{x:Bind ViewModel.BaseOutput, Mode=OneWay}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                                                <Button x:Name="CopyBaseButton" Content="Copy base result" Tag="base" Click="OnCopyTextResultClick" IsEnabled="False" />
+                                            </StackPanel>
+                                        </Border>
+                                        <Border x:Name="AdaptedResultCard" Grid.Column="1" Padding="16" CornerRadius="8"
+                                                BorderThickness="1" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                                AutomationProperties.Name="LoRA result">
+                                            <StackPanel Spacing="8">
+                                                <TextBlock Text="With LoRA" FontWeight="SemiBold" />
+                                                <TextBlock x:Name="AdaptedResultStatus" Text="{x:Bind ViewModel.AdaptedStatus, Mode=OneWay}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                                                <TextBlock x:Name="AdaptedResultOutput" Text="{x:Bind ViewModel.AdaptedOutput, Mode=OneWay}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                                                <Button x:Name="CopyAdapterButton" Content="Copy LoRA result" Tag="adapter" Click="OnCopyTextResultClick" IsEnabled="False" />
+                                            </StackPanel>
+                                        </Border>
+                                    </Grid>
+                                </StackPanel>
+                                <StackPanel Visibility="{x:Bind ViewModel.ComparisonRunningVisibility, Mode=OneWay}" Spacing="8">
+                                    <ProgressBar IsIndeterminate="True" AutomationProperties.Name="Generating moderated results" />
+                                    <TextBlock Text="Working - results appear after moderation." AutomationProperties.LiveSetting="Polite" />
+                                    <Button x:Name="CancelComparisonButton" Content="Cancel" Click="OnCancelTextIntelligenceClick"
+                                            IsEnabled="{x:Bind ViewModel.CanCancelTextIntelligence, Mode=OneWay}" />
+                                </StackPanel>
+                                <Expander Header="Compatibility and validation notes" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                                    <TextBlock Text="Use a safetensors LoRA trained for the shipped Aion Instruct base model with the prompt format used during training. Phi Silica and arbitrary Hugging Face adapters are not interchangeable. Loading checks structural compatibility, not adapter quality or safety. Requests stay on this device and remain moderated."
+                                               TextWrapping="Wrap" />
+                                </Expander>
+                            </StackPanel>
+                        </Grid>
+                    </ScrollViewer>
                 </Grid>
             </NavigationView>
 

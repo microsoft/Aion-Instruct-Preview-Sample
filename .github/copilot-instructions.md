@@ -92,12 +92,12 @@ README → [Use Aion Instruct Preview in your own app](../README.md#use-aion-ins
    transitively does NOT import its source-generator targets, and you'll get a wall of
    `CS0246 LanguageModel not found`):
    ```xml
-   <PackageReference Include="AionInstructPreview.Text.Framework" Version="[1.0.1]" />
+   <PackageReference Include="AionInstructPreview.Text.Framework" Version="[1.1.0]" />
    <PackageReference Include="Microsoft.Windows.CsWinRT" Version="2.1.5" />
    ```
-   Pin the SDK with the exact range `[1.0.1]` — the local feed is hand-populated, so `1.0.*`
-   silently resolves to whatever `.nupkg` is present. This sample requires **1.0.1** for the updated text
-   contract and includes `AionInstructPreview.Imaging.winmd`.
+   Pin the SDK with the exact range `[1.1.0]`. This branch requires framework
+   **1.1.0.0** and matching local build artifacts; it is not yet a published release.
+   Do not silently use an older SDK from a shared cache.
    A **packaged** app additionally needs `Microsoft.WindowsAppSDK`, `Microsoft.Windows.SDK.BuildTools`,
    and (for `dotnet run` without VS) `Microsoft.Windows.SDK.BuildTools.WinApp` — see the root
    [`AionInstructPreview.Chat.csproj`](../AionInstructPreview.Chat.csproj) for the exact set and the
@@ -129,7 +129,7 @@ op.Progress = (_, delta) => { /* streamed text chunk — marshal to UI thread yo
 LanguageModelResponseResult result = await op;
 ```
 
-- **SDK 1.0.1 contract:** multi-turn generation requires the third
+- **Chat contract:** multi-turn generation requires the third
   `AionInstructPreview.Text.LanguageModelOptions` argument; `null` is rejected.
   Single-shot generation supports `(prompt)` and `(prompt, options)`. Options expose only
   `Temperature`, `TopP`, `TopK`, and `ContentFilterOptions` (no LoRA).
@@ -138,8 +138,13 @@ LanguageModelResponseResult result = await op;
   `ContentFilterOptions` is constructed by default and enables moderation in the moderation
   follow-up. That follow-up requires matching rebuilt SDK metadata and runtime; do not infer
   moderation support from the previously published package versions or invent a release version.
-  Rebuild consumers with NuGet **1.0.1** and framework **1.0.0.3**; this breaking preview contract
-  change does not promise compatibility with previously built consumer binaries.
+  This branch uses NuGet **1.1.0** and framework **1.1.0.0**.
+- **Separate features:** Text intelligence uses built-in task adapters. Developer LoRAs are
+  exclusive to the LoRA validation tab's language-model generation. Preserve TI settings/results
+  when loading or unloading a developer adapter.
+- **Adapter diagnostics:** preserve known native compatibility result names/codes using
+  `AdapterErrorDetail`, not raw exception messages. Accepted revalidation/format warnings remain
+  visible; failed replacement must keep both the old adapter and its warning.
 - **No preview-only diagnostics:** results expose `Text` and `Status`, not `TokenCount`,
   `TimeToFirstToken`, or `DecodeDuration`. The model no longer exposes `GetTokenCount`,
   `MaxPromptTokenCount`, or `ContextLength`. Keep measurements in the app using `Stopwatch`

@@ -31,8 +31,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="AionInstructPreview.Text.Framework" Version="[1.0.1]" />
+    <PackageReference Include="AionInstructPreview.Text.Framework" Version="[1.1.0]" />
     <PackageReference Include="Microsoft.Windows.CsWinRT" Version="2.1.5" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\AionTextIntelligenceClient.cs" Link="AionTextIntelligenceClient.cs" />
   </ItemGroup>
 
 </Project>
