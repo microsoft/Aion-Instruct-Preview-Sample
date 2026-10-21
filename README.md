@@ -20,11 +20,9 @@ entire in-box API.
 > - **Performance.** The first-update latency and updates/sec shown in the app are **preliminary,
 >   app-observed streaming measurements — not tokenizer throughput or final model performance.**
 >   Runtime and model optimizations are underway.
-> - **Branch compatibility.** This development branch requires framework **1.1.0.0** or newer and
->   SDK NuGet **1.1.0** from the same build; these are not yet published.
->   Use the local-artifact setup below. The public 1.0.0.3 release supports main's chat/image
->   sample, not this TI branch. Bootstrap rejects older releases. Moderation does not
->   establish RAI qualification.
+> - **Release compatibility.** Use framework **1.1.0.0** or newer with SDK NuGet **1.1.0** from the
+>   same release or build; see the [Quickstart](#quickstart). Bootstrap rejects older releases.
+>   Moderation does not establish RAI qualification.
 
 ## Developer validation limitations
 
@@ -47,7 +45,7 @@ validation package is not the final Windows delivery.
   compliance with the EU AI Act. The watermark may become visible when model output is pasted
   into certain applications or locations.
 - **LoRA compatibility.** Phi Silica-compatible LoRAs are not compatible with Aion Instruct. Use
-  Foundry Toolkit to create new custom LoRAs for Aion Instruct. This branch can load compatible
+  Foundry Toolkit to create new custom LoRAs for Aion Instruct. The sample can load compatible
   local safetensors exports for validation; successful loading is not quality or RAI qualification.
 - **Behavioral changes.** Aion Instruct is a new model and behaves differently from Phi Silica.
   Application developers must not rely on deterministic output.
@@ -206,7 +204,7 @@ After building the console sample, check redirected output and native-error diag
 Use the corresponding `x64` / `win-x64` build on Intel. This runs real inference against the
 installed SDK, including an expected invalid-input failure after model initialization.
 
-For interactive UI regression checks, launch this branch and pass its process ID to
+For interactive UI regression checks, launch the sample and pass its process ID to
 `scripts\Test-TextToolsUI.ps1`. The test changes task/input selections and runs inference. Optional
 `-AdapterPath` and `-IncompatibleAdapterPath` arguments also test the real picker, paired comparison,
 failed replacement, cancellation, and unloading. Use test adapters, not a live validation session.
@@ -379,8 +377,11 @@ This runtime supplies the imaging and content-safety types used by the SDK.
 
 ### 1. Install the Aion Instruct Preview release
 
-Use the matching TI build artifacts until the TI release is published.
-Choose one framework MSIX for your device and the SDK NuGet, and review the EULA before use:
+Download the matching artifacts from a
+[release](https://github.com/microsoft/Aion-Instruct-Preview-Sample/releases) containing framework
+**1.1.0.0** and SDK NuGet **1.1.0**. If that release is not available yet, use matching build
+artifacts. Choose one framework MSIX for your device and the SDK NuGet, and review the EULA
+before use:
 
 | Asset | Who needs it |
 |---|---|
@@ -429,9 +430,11 @@ Both paths first need the SDK NuGet (next).
 
 ### Getting the SDK NuGet
 
-Obtain `AionInstructPreview.Text.Framework.1.1.0.nupkg` from the matching TI build.
-Review the validation EULA before use. Official release contracts are distributed through signed
-GitHub release assets, not nuget.org; this candidate is not yet published. Place it in a local
+Download `AionInstructPreview.Text.Framework.1.1.0.nupkg` from a
+[release](https://github.com/microsoft/Aion-Instruct-Preview-Sample/releases) containing it, or use
+the matching build artifact if that release is not available yet.
+Review the validation EULA before use. The SDK contract is distributed through signed GitHub
+release assets, not nuget.org. Place it in a local
 feed folder next to your csproj (this sample
 uses `./nuget-local/`) and point NuGet at that folder in a `nuget.config` alongside the csproj:
 
@@ -620,7 +623,7 @@ Preview-only diagnostics have been removed: results no longer expose `TokenCount
 `TimeToFirstToken`, or `DecodeDuration`, and the model no longer exposes `GetTokenCount`,
 `MaxPromptTokenCount`, or `ContextLength`. Measure app-observed timing locally instead; callback
 counts are progress updates, not exact token counts. Rebuild consumers with NuGet **1.0.1** and run
-against framework **1.0.0.3** for that earlier release. This branch instead requires NuGet
+against framework **1.0.0.3** for that earlier release. The sample now requires NuGet
 **1.1.0** and framework **1.1.0.0** for text intelligence and LoRA APIs.
 The earlier preview contract change did not promise compatibility with previously built consumer binaries.
 

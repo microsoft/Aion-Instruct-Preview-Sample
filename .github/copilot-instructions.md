@@ -95,8 +95,8 @@ README → [Use Aion Instruct Preview in your own app](../README.md#use-aion-ins
    <PackageReference Include="AionInstructPreview.Text.Framework" Version="[1.1.0]" />
    <PackageReference Include="Microsoft.Windows.CsWinRT" Version="2.1.5" />
    ```
-   Pin the SDK with the exact range `[1.1.0]`. This branch requires framework
-   **1.1.0.0** and matching local build artifacts; it is not yet a published release.
+   Pin the SDK with the exact range `[1.1.0]`. The sample requires framework
+   **1.1.0.0** or newer, with the SDK NuGet from the same release or build.
    Do not silently use an older SDK from a shared cache.
    A **packaged** app additionally needs `Microsoft.WindowsAppSDK`, `Microsoft.Windows.SDK.BuildTools`,
    and (for `dotnet run` without VS) `Microsoft.Windows.SDK.BuildTools.WinApp` — see the root
@@ -138,7 +138,7 @@ LanguageModelResponseResult result = await op;
   `ContentFilterOptions` is constructed by default and enables moderation in the moderation
   follow-up. That follow-up requires matching rebuilt SDK metadata and runtime; do not infer
   moderation support from the previously published package versions or invent a release version.
-  This branch uses NuGet **1.1.0** and framework **1.1.0.0**.
+  The sample uses NuGet **1.1.0** and framework **1.1.0.0**.
 - **Separate features:** Text intelligence uses built-in task adapters. Developer LoRAs are
   exclusive to the LoRA validation tab's language-model generation. Preserve TI settings/results
   when loading or unloading a developer adapter.
