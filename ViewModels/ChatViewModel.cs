@@ -90,12 +90,12 @@ public sealed class ChatViewModel : INotifyPropertyChanged, IDisposable
     public string AdapterName => HasCustomAdapter ? System.IO.Path.GetFileName(AdapterPath) : "No custom LoRA loaded";
     public string AdapterStatus => $"Adapter: {AdapterName}";
     public bool HasAdapterWarning => _textIntelligenceClient?.AdapterLoadStatus is
-        LanguageModelLowRankAdapterLoadStatus.RevalidationRecommended or LanguageModelLowRankAdapterLoadStatus.DeprecatedFormat;
+        LanguageModelLowRankAdapterStatus.RevalidationRecommended or LanguageModelLowRankAdapterStatus.DeprecatedFormat;
     public string AdapterWarningMessage => _textIntelligenceClient?.AdapterLoadStatus switch
     {
-        LanguageModelLowRankAdapterLoadStatus.RevalidationRecommended =>
+        LanguageModelLowRankAdapterStatus.RevalidationRecommended =>
             "The adapter loaded, but its declared base model version differs. Revalidate its accuracy against this Aion Instruct model and retrain if needed.",
-        LanguageModelLowRankAdapterLoadStatus.DeprecatedFormat =>
+        LanguageModelLowRankAdapterStatus.DeprecatedFormat =>
             "The adapter loaded using a deprecated format. Re-export it using the current supported format.",
         _ => string.Empty
     };
@@ -477,9 +477,13 @@ public sealed class ChatViewModel : INotifyPropertyChanged, IDisposable
         {
             ClearComparisonResults();
             var detail = string.IsNullOrWhiteSpace(prompt) ? "Enter a prompt before running." :
-                !runBase && !runAdapter ? "Select a comparison run." : "Load a LoRA before running it.";
-            if (runBase) { BaseStatus = detail; }
-            AdaptedStatus = detail;
+                !runBase && !runAdapter ? "Select a comparison run." : string.Empty;
+            BaseStatus = runBase
+                ? detail.Length > 0 ? detail : "Comparison not run. Load a LoRA or choose base only."
+                : "Not run.";
+            AdaptedStatus = runAdapter
+                ? detail.Length > 0 ? detail : "Load a LoRA before running it."
+                : !runBase ? detail : "Not run.";
             RaiseComparisonResults();
             return;
         }

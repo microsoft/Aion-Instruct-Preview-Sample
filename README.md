@@ -165,18 +165,20 @@ Text-intelligence results and options are preserved.
 
 The SDK preserves native compatibility outcomes:
 
-- **Loaded:** structural compatibility passed; this does not establish quality or safety.
+- **Compatible:** structural compatibility passed; this does not establish quality or safety.
 - **Revalidation recommended:** the adapter loaded, but the base model minor version changed.
   A persistent warning asks you to revalidate accuracy and retrain if needed.
 - **Deprecated format:** when native accepts an older format, it loads with a warning to re-export.
   This does not bypass the model's format restrictions; incompatible legacy formats are rejected.
-- **Incompatible / retraining required:** loading fails with the native result name and numeric
-  code. The previous adapter remains active after a failed replacement.
+- **Incompatible / retraining required:** loading fails with the SDK-authored native reason and
+  HRESULT. The previous adapter remains active after a failed replacement.
 
 Native validation may group model-name, schema, major-version and tensor incompatibilities into
 one result. The app preserves the reported reason but cannot promise finer detail than native
 provides. Expand **Native compatibility details** for its selectable diagnostic. The console also prints accepted
 adapter warnings to stderr.
+
+Closing an adapter rejects new requests; an accepted request retains it until finished.
 
 A custom LoRA is used only by **Run with LoRA only** and the adapted half of **Compare**, through
 the SDK's language-model generation APIs. Chat, image description, and text intelligence do not
@@ -186,28 +188,6 @@ use it. Use the prompt format from training. Compatibility details live in the c
 - **Esc** cancels only the visible tab's running operation. Switching tabs does not cancel work.
 - Controls are disabled while loading or generating. Status updates raise live-region events;
   manual Narrator/high-contrast/text-scaling qualification is still required.
-- Closing an adapter rejects new requests; an accepted request retains it until finished.
-
-The navigation regression test runs without launching the app:
-
-```powershell
-.\scripts\Test-FeatureNavigation.ps1
-```
-
-After building the console sample, check redirected output and native-error diagnostics with:
-
-```powershell
-.\scripts\Test-ConsoleOutput.ps1 -ExecutablePath `
-  .\unpackaged-console\bin\ARM64\Release\net9.0-windows10.0.26100.0\win-arm64\AionInstructPreview.Chat.Console.exe
-```
-
-Use the corresponding `x64` / `win-x64` build on Intel. This runs real inference against the
-installed SDK, including an expected invalid-input failure after model initialization.
-
-For interactive UI regression checks, launch the sample and pass its process ID to
-`scripts\Test-TextToolsUI.ps1`. The test changes task/input selections and runs inference. Optional
-`-AdapterPath` and `-IncompatibleAdapterPath` arguments also test the real picker, paired comparison,
-failed replacement, cancellation, and unloading. Use test adapters, not a live validation session.
 
 The shipped base model is identified in adapter metadata as `muffinformer_large_qdq`, version `2.1`.
 Use schema-v1 Aion Instruct-compatible safetensors
@@ -640,8 +620,9 @@ token streaming. Budget queries reject busy models; retry after generation compl
 result. Check `ExtendedError`, then use `LowRankAdapter` through `LanguageModelOptions.LowRankAdapter`
 with `model.GenerateResponseAsync`. `Status` distinguishes incompatibility, invalid adapter data,
 and other errors without parsing exception text. Successful adapters retain `LoadStatus` and
-`LoadMessage` compatibility warnings. The sample uses independent single-turn comparisons and keeps
-developer adapters separate from built-in TI tasks.
+`LoadMessage` compatibility warnings. The status type is `LanguageModelLowRankAdapterStatus`, with
+`Compatible` for ordinary successful loads. The sample uses independent single-turn comparisons and
+keeps developer adapters separate from built-in TI tasks.
 See [validation workflows](#validate-text-intelligence-and-your-lora).
 
 ### [`LanguageModel`](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.windows.ai.text.languagemodel?view=windows-app-sdk-2.0)
@@ -800,6 +781,31 @@ them onto a near-miss would feed the encoder swapped channels. Convert before yo
 >   application scenarios.
 
 ---
+
+## Testing the sample
+
+The navigation regression test runs without launching the app:
+
+```powershell
+.\scripts\Test-FeatureNavigation.ps1
+```
+
+After building the console sample, check redirected output and native-error diagnostics with:
+
+```powershell
+.\scripts\Test-ConsoleOutput.ps1 -ExecutablePath `
+  .\unpackaged-console\bin\ARM64\Release\net9.0-windows10.0.26100.0\win-arm64\AionInstructPreview.Chat.Console.exe
+```
+
+Use the corresponding `x64` / `win-x64` build on Intel. This runs real inference against the
+installed SDK, including an expected invalid-input failure after model initialization.
+
+For interactive UI regression checks, launch the sample and pass its process ID to
+`scripts\Test-TextToolsUI.ps1`. The test changes task/input selections and runs inference. Optional
+`-AdapterPath`, `-RevalidationAdapterPath`, and `-IncompatibleAdapterPath` arguments also test the real
+picker, paired comparison, compatibility warnings, failed replacement, cancellation, and unloading.
+Keep the local desktop unlocked and the sample in the foreground; remote-desktop input capture can
+interfere with keyboard/focus assertions. Use test adapters, not a live validation session.
 
 ## Troubleshooting
 

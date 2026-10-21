@@ -28,12 +28,14 @@ public sealed class TextInputValidationException(string message) : ArgumentExcep
 
 public sealed class AdapterLoadException : Exception
 {
-    public LanguageModelLowRankAdapterLoadStatus Status { get; }
+    public LanguageModelLowRankAdapterStatus Status { get; }
+    public string SdkLoadMessage { get; }
 
-    public AdapterLoadException(LanguageModelLowRankAdapterLoadStatus status, Exception? error)
+    public AdapterLoadException(LanguageModelLowRankAdapterStatus status, Exception? error, string sdkLoadMessage)
         : base("The adapter could not be loaded.", error)
     {
         Status = status;
+        SdkLoadMessage = sdkLoadMessage;
         HResult = error?.HResult ?? unchecked((int)0x8000FFFF);
     }
 }
@@ -44,7 +46,7 @@ public sealed class AionTextIntelligenceClient(LanguageModel model) : IDisposabl
     private bool _disposed;
 
     public string? AdapterPath { get; private set; }
-    public LanguageModelLowRankAdapterLoadStatus? AdapterLoadStatus => _adapter?.LoadStatus;
+    public LanguageModelLowRankAdapterStatus? AdapterLoadStatus => _adapter?.LoadStatus;
     public string AdapterLoadMessage => _adapter?.LoadMessage ?? string.Empty;
 
     public static void ValidateInput(TextOperation operation, string text, string instruction)
@@ -69,13 +71,13 @@ public sealed class AionTextIntelligenceClient(LanguageModel model) : IDisposabl
         if (error is not AdapterLoadException load) { return ErrorDetail(error); }
         var reason = load.Status switch
         {
-            LanguageModelLowRankAdapterLoadStatus.Incompatible =>
+            LanguageModelLowRankAdapterStatus.Incompatible =>
                 "AdapterIncompatibleRetrainRequired: retrain or export an adapter compatible with this Aion Instruct base model",
-            LanguageModelLowRankAdapterLoadStatus.InvalidAdapter =>
+            LanguageModelLowRankAdapterStatus.InvalidAdapter =>
                 "The adapter contents, format, metadata or tensor layout are invalid",
             _ => "The adapter could not be loaded"
         };
-        return $"{reason} ({load.Status}, HRESULT=0x{error.HResult:X8}).";
+        return $"{reason} ({load.Status}, HRESULT=0x{error.HResult:X8}). {load.SdkLoadMessage}".TrimEnd();
     }
 
     public async Task LoadAdapterAsync(string path)
@@ -83,9 +85,9 @@ public sealed class AionTextIntelligenceClient(LanguageModel model) : IDisposabl
         ObjectDisposedException.ThrowIf(_disposed, this);
         // Keep the old adapter if loading the replacement fails.
         var result = await LanguageModelLowRankAdapter.CreateFromPathAsync(model, path);
-        if (result.ExtendedError is { } error) { throw new AdapterLoadException(result.Status, error); }
+        if (result.ExtendedError is { } error) { throw new AdapterLoadException(result.Status, error, result.LoadMessage); }
         var loaded = result.LowRankAdapter
-            ?? throw new AdapterLoadException(result.Status, null);
+            ?? throw new AdapterLoadException(result.Status, null, result.LoadMessage);
         if (_disposed)
         {
             ((IDisposable)loaded).Dispose();

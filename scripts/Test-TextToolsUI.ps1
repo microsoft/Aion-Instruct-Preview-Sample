@@ -144,6 +144,14 @@ Invoke-Control -Name 'Try an example'
 Assert-UI -Condition { (Find-Control -Id 'RunTextSkillButton').Current.IsEnabled } -Message 'Example enables Summarize'
 Select-Task -Name 'Rewrite'
 Assert-UI -Condition { -not (Find-Control -Id 'RewriteToneBox').Current.IsOffscreen } -Message 'Rewrite shows tone'
+Invoke-Control -Name 'Try an example'
+Assert-UI -Condition { (Find-Control -Id 'RunTextSkillButton').Current.IsEnabled } -Message 'Rewrite has a valid selected tone'
+Invoke-Control -Id 'RunTextSkillButton'
+Wait-UI -Condition {
+    (Find-Control -Id 'TextOperationBox').Current.IsEnabled -and
+    (Find-Control -Id 'SkillResultStatus').Current.Name -eq 'Complete.'
+}
+Assert-UI -Condition { (Find-Control -Id 'SkillResultOutput').Current.Name.Length -gt 0 } -Message 'Rewrite runs with the selected tone and returns moderated text'
 Select-Task -Name 'Rewrite with custom instruction'
 Set-Text -Id 'CustomRewriteInstruction' -Text ''
 Assert-UI -Condition { -not (Find-Control -Id 'RunTextSkillButton').Current.IsEnabled } -Message 'Custom rewrite requires instructions'
@@ -287,6 +295,9 @@ if ($AdapterPath) {
         Load-TestAdapter -Path $IncompatibleAdapterPath
         Assert-UI -Condition { (Find-Control -Id 'AdapterFeedbackText').Current.Name -like "Replacement failed; still using $expectedName.*" } `
             -Message 'Failed replacement explicitly retains the previous adapter'
+        Assert-UI -Condition {
+            (Find-Control -Id 'AdapterFeedbackText').Current.Name -like '*AdapterIncompatibleRetrainRequired:*'
+        } -Message 'Failed replacement preserves the SDK native compatibility reason'
         Assert-UI -Condition { (Find-Control -Id 'ActiveAdapterText').Current.Name -eq "Adapter: $expectedName" } `
             -Message 'Failed replacement preserves the active adapter'
         if ($RevalidationAdapterPath) {
@@ -318,8 +329,10 @@ if ($AdapterPath) {
         -Message 'Replacing and unloading developer LoRAs preserve the TI result'
 }
 (Find-Control -Name 'Text intelligence').GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select()
-Select-Task -Name 'Summarize text'
-Invoke-Control -Name 'Try an example'
+Select-Task -Name 'Rewrite'
+Set-Text -Id 'TextSkillInput' -Text ((1..30 | ForEach-Object {
+    "On day $_, the library team organized a reading workshop, added study desks, and prepared a report for visitors."
+}) -join ' ')
 Invoke-Control -Id 'RunTextSkillButton'
 Wait-UI -Condition {
     $cancel = Find-Control -Id 'CancelTextButton' -Optional
@@ -329,11 +342,9 @@ Wait-UI -Condition {
 (Find-Control -Name 'Compatibility and validation notes').SetFocus()
 [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
 (Find-Control -Name 'Text intelligence').GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select()
-$status = (Find-Control -Id 'SkillResultStatus').Current.Name
-Assert-UI -Condition { $status -ne 'Cancelled.' } -Message 'Escape on LoRA validation does not cancel a TI operation'
-$cancel = Find-Control -Id 'CancelTextButton' -Optional
-if ($cancel -and $cancel.Current.IsEnabled) { Invoke-Control -Id 'CancelTextButton' }
 Wait-UI -Condition { (Find-Control -Id 'TextOperationBox').Current.IsEnabled }
+Assert-UI -Condition { (Find-Control -Id 'SkillResultStatus').Current.Name -eq 'Complete.' } `
+    -Message 'Escape on LoRA validation allows the TI operation to complete'
 (Find-Control -Id 'TextSkillInput').SetFocus()
 [System.Windows.Forms.SendKeys]::SendWait('^{ENTER}')
 Wait-UI -Condition {

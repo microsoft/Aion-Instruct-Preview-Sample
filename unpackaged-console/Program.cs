@@ -89,7 +89,7 @@ if (args.Length > 0 && args[0] == "--text-intelligence")
                 Console.Error.WriteLine(AionTextIntelligenceClient.AdapterErrorDetail(error));
                 return 1;
             }
-            if (client.AdapterLoadStatus != LanguageModelLowRankAdapterLoadStatus.Loaded)
+            if (client.AdapterLoadStatus != LanguageModelLowRankAdapterStatus.Compatible)
             {
                 Console.Error.WriteLine($"Adapter loaded with warning: {client.AdapterLoadMessage}");
             }
@@ -98,7 +98,7 @@ if (args.Length > 0 && args[0] == "--text-intelligence")
             new ConversationSummaryOptions(), CancellationToken.None);
         Console.Error.WriteLine($"Text intelligence status: {result.Status}");
         if (result.Status != LanguageModelResponseStatus.Complete) { return 1; }
-        Console.WriteLine(result.Text);
+        if (result.Text.Length > 0) { Console.WriteLine(result.Text); }
         foreach (var row in result.Rows) { Console.WriteLine(string.Join(" | ", row.Columns)); }
         return 0;
     }

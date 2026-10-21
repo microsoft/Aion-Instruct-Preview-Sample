@@ -20,6 +20,7 @@ public sealed partial class MainWindow : Window
     private bool _renderMarkdown = true;
     private bool _textUiReady;
     private Button? _lastTextAction;
+    private string _lastAdapterWarning = string.Empty;
 
     public ChatViewModel ViewModel { get; }
 
@@ -84,14 +85,25 @@ public sealed partial class MainWindow : Window
     // (Focus is a no-op on a still-disabled control).
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (_textUiReady) { UpdateTextTaskUi(); }
+        if (_textUiReady && e.PropertyName is nameof(ChatViewModel.TextToolsEnabled) or
+            nameof(ChatViewModel.HasCustomAdapter) or nameof(ChatViewModel.TextIntelligenceOutput) or
+            nameof(ChatViewModel.TableHeader) or nameof(ChatViewModel.BaseOutput) or nameof(ChatViewModel.AdaptedOutput))
+        {
+            UpdateTextTaskUi();
+        }
+        bool warningChanged = false;
+        if (e.PropertyName == nameof(ChatViewModel.AdapterWarningMessage))
+        {
+            warningChanged = _lastAdapterWarning != ViewModel.AdapterWarningMessage;
+            _lastAdapterWarning = ViewModel.AdapterWarningMessage;
+        }
         FrameworkElement? announcement = e.PropertyName switch
         {
             nameof(ChatViewModel.TextIntelligenceStatus) => SkillResultStatus,
             nameof(ChatViewModel.BaseStatus) => BaseResultStatus,
             nameof(ChatViewModel.AdaptedStatus) => AdaptedResultStatus,
             nameof(ChatViewModel.AdapterFeedback) => AdapterFeedbackText,
-            nameof(ChatViewModel.AdapterWarningMessage) => AdapterCompatibilityWarning,
+            nameof(ChatViewModel.AdapterWarningMessage) when warningChanged && ViewModel.HasAdapterWarning => AdapterCompatibilityWarning,
             _ => null
         };
         if (_textUiReady && announcement is not null)
@@ -323,6 +335,12 @@ public sealed partial class MainWindow : Window
         {
             return "Describe how you want the text rewritten.";
         }
+        if (SelectedTextTask == TextOperation.Rewrite &&
+            (RewriteToneBox.SelectedItem is not global::AionInstructPreview.Text.TextRewriteTone tone ||
+             !Enum.IsDefined(tone)))
+        {
+            return "Select a rewrite tone.";
+        }
         if (SelectedTextTask == TextOperation.SummarizeConversation &&
             (!double.IsFinite(MaxSummaryPoints.Value) || MaxSummaryPoints.Value < 1 ||
              MaxSummaryPoints.Value > 100 || MaxSummaryPoints.Value != Math.Truncate(MaxSummaryPoints.Value)))
@@ -370,9 +388,11 @@ public sealed partial class MainWindow : Window
             options.Language = SummaryLanguage.Text;
         }
         _lastTextAction = RunTextSkillButton;
+        var tone = SelectedTextTask == TextOperation.Rewrite &&
+            RewriteToneBox.SelectedItem is global::AionInstructPreview.Text.TextRewriteTone selectedTone
+            ? selectedTone : global::AionInstructPreview.Text.TextRewriteTone.Default;
         await ViewModel.RunTextIntelligenceAsync(
-            SelectedTextTask, TextSkillInput.Text,
-            (global::AionInstructPreview.Text.TextRewriteTone)RewriteToneBox.SelectedItem,
+            SelectedTextTask, TextSkillInput.Text, tone,
             CustomRewriteInstruction.Text, options);
     }
 

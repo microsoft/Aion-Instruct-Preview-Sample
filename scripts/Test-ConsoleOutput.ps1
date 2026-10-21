@@ -51,6 +51,34 @@ try {
         $summary.Output -match 'Loading model|Text intelligence status:') {
         throw 'TI must retain result-only stdout and loading/completion stderr after native initialization.'
     }
+    $conversationPath = Join-Path $temporary 'conversation.json'
+    [IO.File]::WriteAllText($conversationPath,
+        '[{"participant":"Alex","message":"The planning meeting is Tuesday at ten."},{"participant":"Robin","message":"I will bring the project schedule."}]',
+        [Text.UTF8Encoding]::new($false))
+    $conversation = Invoke-ConsoleCheck -Arguments @('--text-intelligence', 'SummarizeConversation', "`"$conversationPath`"") `
+        -Name 'conversation' -ExpectedExitCode 0
+    if ([string]::IsNullOrWhiteSpace($conversation.Output) -or
+        $conversation.Output -match '\AV=[01](?:\r?\n|$)' -or
+        $conversation.Error -notmatch 'Text intelligence status: Complete') {
+        throw 'Conversation summaries must contain summary text, not a leading native RAI protocol line.'
+    }
+    [IO.File]::WriteAllText($inputPath, 'Apples cost 3 dollars and weigh 1 kilogram. Pears cost 4 dollars and weigh 2 kilograms.',
+        [Text.UTF8Encoding]::new($false))
+    $table = Invoke-ConsoleCheck -Arguments @('--text-intelligence', 'TextToTable', "`"$inputPath`"") `
+        -Name 'table' -ExpectedExitCode 0
+    if ([string]::IsNullOrWhiteSpace($table.Output) -or $table.Output.StartsWith("`r") -or
+        $table.Output.StartsWith("`n") -or $table.Error -notmatch 'Text intelligence status: Complete') {
+        throw 'Table output must start with the header row, not an empty text result.'
+    }
+    $invalidAdapter = Join-Path $temporary 'corrupt.safetensors'
+    [IO.File]::WriteAllText($invalidAdapter, 'not a safetensors adapter', [Text.UTF8Encoding]::new($false))
+    $adapterFailure = Invoke-ConsoleCheck -Arguments @('--text-intelligence', 'GenerateWithLoRA',
+        "`"$inputPath`"", "`"$invalidAdapter`"") -Name 'invalid-adapter' -ExpectedExitCode 1
+    if ($adapterFailure.Error -notmatch 'InvalidAdapter' -or
+        $adapterFailure.Error -notmatch 'Adapter load failed \(HRESULT=0x8007000D\)' -or
+        -not [string]::IsNullOrWhiteSpace($adapterFailure.Output)) {
+        throw 'Failed adapter loads must retain the SDK-authored diagnostic without output.'
+    }
     $invalid = Invoke-ConsoleCheck -Arguments @('--text-intelligence', 'Summarize', "`"$inputPath`"", 'adapter.safetensors') `
         -Name 'invalid' -ExpectedExitCode 1
     if ($invalid.Error -notmatch 'Adapter paths are only used with GenerateWithLoRA' -or
@@ -65,7 +93,7 @@ try {
         -not [string]::IsNullOrWhiteSpace($nativeFailure.Output)) {
         throw 'TI must preserve the operational diagnostic after native model disposal on failure.'
     }
-    Write-Output 'PASS: redirected chat/TI outputs and post-disposal errors survive; loading/status diagnostics use stderr; invalid arguments do not load the model.'
+    Write-Output 'PASS: redirected chat/TI outputs and post-disposal errors survive; conversation metadata is removed; diagnostics use stderr; invalid arguments do not load the model.'
 } finally {
     foreach ($file in (Get-ChildItem -LiteralPath $temporary -File)) { [IO.File]::Delete($file.FullName) }
     [IO.Directory]::Delete($temporary, $false)
