@@ -17,6 +17,10 @@ function Invoke-ConsoleCheck {
     $stderr = Join-Path $temporary ($Name + '.stderr')
     $process = Start-Process -FilePath $ExecutablePath -ArgumentList $Arguments `
         -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru -NoNewWindow
+    # Windows PowerShell 5.1 returns a Process that holds no handle, so its ExitCode is $null
+    # once the process exits. Reading Handle here keeps one open: don't remove this line or move
+    # it after WaitForExit, even though it looks unused.
+    $null = $process.Handle
     try {
         if (-not $process.WaitForExit(600000)) {
             Stop-Process -Id $process.Id -Force
