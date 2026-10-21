@@ -12,6 +12,14 @@ $namespaces.AddNamespace('ui', 'http://schemas.microsoft.com/winfx/2006/xaml/pre
 $namespaces.AddNamespace('x', 'http://schemas.microsoft.com/winfx/2006/xaml')
 $navigation = $layout.SelectSingleNode('//ui:NavigationView[@x:Name="MainNav"]', $namespaces)
 if (-not $navigation) { throw 'Main navigation is missing.' }
+foreach ($tag in 'chat', 'image', 'text', 'lora') {
+    $icon = $navigation.SelectSingleNode(
+        "ui:NavigationView.MenuItems/ui:NavigationViewItem[@Tag='$tag']/ui:NavigationViewItem.Icon/ui:FontIcon",
+        $namespaces)
+    if (-not $icon -or [string]::IsNullOrWhiteSpace($icon.Glyph)) {
+        throw "$tag navigation must have an icon."
+    }
+}
 $container = $navigation.SelectSingleNode('ui:Grid', $namespaces)
 if (-not $container) { throw 'Navigation content grid is missing.' }
 foreach ($name in 'ChatView', 'ImageView', 'TextIntelligenceView', 'LoRAView') {

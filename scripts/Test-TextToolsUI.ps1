@@ -152,8 +152,15 @@ Assert-UI -Condition { (Find-Control -Id 'RunTextSkillButton').Current.IsEnabled
 Select-Task -Name 'Summarize conversation'
 Set-Text -Id 'TextSkillInput' -Text '{not-json}'
 Assert-UI -Condition { -not (Find-Control -Id 'RunTextSkillButton').Current.IsEnabled } -Message 'Invalid conversation JSON disables inference'
+Assert-UI -Condition {
+    (Find-Control -Id 'SkillValidationMessage').Current.Name -eq 'Enter a valid JSON array. Try the example to see the format.'
+} -Message 'Invalid conversation input explains why inference is disabled'
 Invoke-Control -Name 'Try an example'
 Assert-UI -Condition { (Find-Control -Id 'RunTextSkillButton').Current.IsEnabled } -Message 'Conversation example is valid'
+Assert-UI -Condition {
+    $message = Find-Control -Id 'SkillValidationMessage' -Optional
+    -not $message -or [string]::IsNullOrEmpty($message.Current.Name)
+} -Message 'Valid conversation input clears the validation message'
 Set-Text -Id 'TextSkillInput' -Text '[{"participant":"Alex","message":""},{"participant":"","message":"Attachment only."}]'
 Assert-UI -Condition { (Find-Control -Id 'RunTextSkillButton').Current.IsEnabled } -Message 'Attachment-only conversation items are accepted'
 Invoke-Control -Id 'RunTextSkillButton'

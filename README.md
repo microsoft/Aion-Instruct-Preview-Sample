@@ -68,9 +68,10 @@ guidance.
 
 ## Quickstart
 
-On this unpublished development branch, supply the matching framework MSIX and NuGet build
-artifacts. The ordinary release Bootstrap path will reject the older public release until a TI
-release is published. For development-signed artifacts, trust the supplied public development
+This sample requires SDK NuGet **1.1.0** and framework **1.1.0.0** or newer. Use `Bootstrap.ps1`
+with a release containing those versions. If that release is not available yet, supply matching
+framework MSIX and NuGet build artifacts; Bootstrap rejects older incompatible releases.
+For development-signed artifacts, trust the supplied public development
 certificate as directed by your build provider, install the MSIX with `Add-AppxPackage`, and put
 the matching candidate NuGet in `nuget-local` before building. SDK build scripts are not included
 in this sample repository.
@@ -195,6 +196,16 @@ The navigation regression test runs without launching the app:
 .\scripts\Test-FeatureNavigation.ps1
 ```
 
+After building the console sample, check redirected output and native-error diagnostics with:
+
+```powershell
+.\scripts\Test-ConsoleOutput.ps1 -ExecutablePath `
+  .\unpackaged-console\bin\ARM64\Release\net9.0-windows10.0.26100.0\win-arm64\AionInstructPreview.Chat.Console.exe
+```
+
+Use the corresponding `x64` / `win-x64` build on Intel. This runs real inference against the
+installed SDK, including an expected invalid-input failure after model initialization.
+
 For interactive UI regression checks, launch this branch and pass its process ID to
 `scripts\Test-TextToolsUI.ps1`. The test changes task/input selections and runs inference. Optional
 `-AdapterPath` and `-IncompatibleAdapterPath` arguments also test the real picker, paired comparison,
@@ -204,7 +215,7 @@ The shipped base model is identified in adapter metadata as `muffinformer_large_
 Use schema-v1 Aion Instruct-compatible safetensors
 metadata and matching tensor names/shapes; arbitrary Hugging Face or Phi Silica adapters are not
 compatible. Structural loading does not validate adapter quality, safety, or training provenance.
-Files remain on the device; this sample does not upload adapters or prompts.
+The sample reads adapter files locally and runs inference on the device.
 
 Conversation summary input is a JSON array:
 

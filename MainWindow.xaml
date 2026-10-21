@@ -127,8 +127,16 @@
                             <FontIcon Glyph="&#xEB9F;" />
                         </NavigationViewItem.Icon>
                     </NavigationViewItem>
-                    <NavigationViewItem Content="Text intelligence" Tag="text" />
-                    <NavigationViewItem Content="LoRA validation" Tag="lora" />
+                    <NavigationViewItem Content="Text intelligence" Tag="text">
+                        <NavigationViewItem.Icon>
+                            <FontIcon Glyph="&#xE8A5;" />
+                        </NavigationViewItem.Icon>
+                    </NavigationViewItem>
+                    <NavigationViewItem Content="LoRA validation" Tag="lora">
+                        <NavigationViewItem.Icon>
+                            <FontIcon Glyph="&#xE713;" />
+                        </NavigationViewItem.Icon>
+                    </NavigationViewItem>
                 </NavigationView.MenuItems>
 
                 <Grid>
@@ -419,7 +427,7 @@
                                             <TextBox x:Name="SummaryLanguage" Header="Language hint (advisory)" Text=""
                                                      TextChanged="OnSkillInputChanged"
                                                      IsEnabled="{x:Bind ViewModel.TextToolsEnabled, Mode=OneWay}" />
-                                            <TextBlock Text="Conversation kind and language are recorded only for telemetry in this preview. They do not change the prompt or translate the summary."
+                                            <TextBlock Text="Conversation kind and language are advisory in this preview. They do not change the prompt or translate the summary."
                                                        TextWrapping="Wrap" Opacity="0.75" />
                                             <CheckBox x:Name="SummaryCitations" Content="Message citations" IsChecked="True"
                                                       Checked="OnSummaryOptionsChanged" Unchecked="OnSummaryOptionsChanged"
@@ -499,7 +507,7 @@
                                     <Button x:Name="CancelTextButton" Content="Cancel" Click="OnCancelTextIntelligenceClick"
                                             IsEnabled="{x:Bind ViewModel.CanCancelTextIntelligence, Mode=OneWay}" />
                                 </StackPanel>
-                                <TextBlock Text="All requests remain on the device and are moderated. Custom adapters loaded on LoRA validation do not affect these skills."
+                                <TextBlock Text="Inference runs on this device and requests are moderated. Custom adapters loaded on LoRA validation do not affect these skills."
                                            TextWrapping="Wrap" Opacity="0.75" />
                             </StackPanel>
                         </Grid>
@@ -602,7 +610,7 @@
                                             IsEnabled="{x:Bind ViewModel.CanCancelTextIntelligence, Mode=OneWay}" />
                                 </StackPanel>
                                 <Expander Header="Compatibility and validation notes" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
-                                    <TextBlock Text="Use a safetensors LoRA trained for the shipped Aion Instruct base model with the prompt format used during training. Phi Silica and arbitrary Hugging Face adapters are not interchangeable. Loading checks structural compatibility, not adapter quality or safety. Requests stay on this device and remain moderated."
+                                    <TextBlock Text="Use a safetensors LoRA trained for the shipped Aion Instruct base model with the prompt format used during training. Phi Silica and arbitrary Hugging Face adapters are not interchangeable. Loading checks structural compatibility, not adapter quality or safety. Inference runs on this device and requests remain moderated."
                                                TextWrapping="Wrap" />
                                 </Expander>
                             </StackPanel>

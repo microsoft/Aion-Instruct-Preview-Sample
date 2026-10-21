@@ -31,6 +31,8 @@ public sealed class ChatViewModel : INotifyPropertyChanged, IDisposable
     private bool _runningComparison;
     private string _textIntelligenceOutput = string.Empty;
     private string _textIntelligenceStatus = "Results appear here.";
+    private string _baseStatus = "Base model results appear here.";
+    private string _adaptedStatus = "Load a LoRA to compare its output.";
 
     public TextRewriteTone[] RewriteTones { get; } = Enum.GetValues<TextRewriteTone>();
     public ObservableCollection<TextIntelligenceTableRow> TableRows { get; } = [];
@@ -42,9 +44,27 @@ public sealed class ChatViewModel : INotifyPropertyChanged, IDisposable
     public Visibility SkillOutputVisibility => TextIntelligenceOutput.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
     public Visibility ComparisonDetailsVisibility => ComparisonPrompt.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
     public string BaseOutput { get; private set; } = string.Empty;
-    public string BaseStatus { get; private set; } = "Base model results appear here.";
+    public string BaseStatus
+    {
+        get => _baseStatus;
+        private set
+        {
+            if (_baseStatus == value) { return; }
+            _baseStatus = value;
+            Raise();
+        }
+    }
     public string AdaptedOutput { get; private set; } = string.Empty;
-    public string AdaptedStatus { get; private set; } = "Load a LoRA to compare its output.";
+    public string AdaptedStatus
+    {
+        get => _adaptedStatus;
+        private set
+        {
+            if (_adaptedStatus == value) { return; }
+            _adaptedStatus = value;
+            Raise();
+        }
+    }
     public string ComparisonProvenance { get; private set; } = string.Empty;
     public string ComparisonPrompt { get; private set; } = string.Empty;
     public bool ComparisonOutOfDate { get; private set; }
@@ -58,7 +78,12 @@ public sealed class ChatViewModel : INotifyPropertyChanged, IDisposable
     public string TextIntelligenceStatus
     {
         get => _textIntelligenceStatus;
-        private set { _textIntelligenceStatus = value; Raise(); }
+        private set
+        {
+            if (_textIntelligenceStatus == value) { return; }
+            _textIntelligenceStatus = value;
+            Raise();
+        }
     }
     public bool HasCustomAdapter => _textIntelligenceClient?.AdapterPath is not null;
     public string AdapterPath => _textIntelligenceClient?.AdapterPath ?? string.Empty;
@@ -306,7 +331,6 @@ public sealed class ChatViewModel : INotifyPropertyChanged, IDisposable
             if (!_disposed)
             {
                 AdaptedStatus = "LoRA results appear here.";
-                Raise(nameof(AdaptedStatus));
                 AdapterFeedback = HasAdapterWarning ? $"Loaded {AdapterName} with a compatibility warning." :
                     $"Loaded {AdapterName}. Compatibility validated; quality and safety still need evaluation.";
             }
@@ -382,8 +406,8 @@ public sealed class ChatViewModel : INotifyPropertyChanged, IDisposable
 
     private void RaiseComparisonResults()
     {
-        foreach (var name in new[] { nameof(BaseOutput), nameof(BaseStatus), nameof(AdaptedOutput),
-            nameof(AdaptedStatus), nameof(ComparisonProvenance), nameof(ComparisonPrompt),
+        foreach (var name in new[] { nameof(BaseOutput), nameof(AdaptedOutput),
+            nameof(ComparisonProvenance), nameof(ComparisonPrompt),
             nameof(ComparisonOutOfDate), nameof(ComparisonStaleVisibility), nameof(ComparisonDetailsVisibility) }) { Raise(name); }
     }
 
@@ -530,7 +554,7 @@ public sealed class ChatViewModel : INotifyPropertyChanged, IDisposable
     private static string ResultStatus(LanguageModelResponseStatus status) => status switch
     {
         LanguageModelResponseStatus.Complete => "Complete.",
-        LanguageModelResponseStatus.PromptBlockedByContentModeration => "Input blocked by moderation. Try different text.",
+        LanguageModelResponseStatus.PromptBlockedByContentModeration => "Input blocked by moderation. Try different text or options.",
         LanguageModelResponseStatus.ResponseBlockedByContentModeration => "Output blocked by moderation. No result is available.",
         LanguageModelResponseStatus.BlockedByPolicy => "Blocked by the preview content policy.",
         LanguageModelResponseStatus.PromptLargerThanContext => "Input is too long. Shorten it and try again.",

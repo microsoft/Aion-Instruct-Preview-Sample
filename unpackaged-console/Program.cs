@@ -29,6 +29,26 @@ catch (Exception ex)
 
 Console.OutputEncoding = new UTF8Encoding(false);
 
+static void RefreshConsoleWriters()
+{
+    Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true });
+    Console.SetError(new StreamWriter(Console.OpenStandardError(), new UTF8Encoding(false)) { AutoFlush = true });
+}
+
+static async Task<LanguageModel> LoadModelAsync()
+{
+    Console.Error.WriteLine("[Aion Instruct Preview-console] Loading model (first run may take several minutes)...");
+    try
+    {
+        return await LanguageModel.CreateAsync();
+    }
+    finally
+    {
+        // Native initialization can replace the standard handles; refresh before reporting any result.
+        RefreshConsoleWriters();
+    }
+}
+
 // --text-intelligence <operation> <text-file> [adapter.safetensors] [tone/custom instruction]
 // Skill output is printed only after final moderation; unlike chat it is not streamed.
 if (args.Length > 0 && args[0] == "--text-intelligence")
@@ -59,7 +79,7 @@ if (args.Length > 0 && args[0] == "--text-intelligence")
         }
         var text = await File.ReadAllTextAsync(args[2]);
         AionTextIntelligenceClient.ValidateInput(operation, text, instruction);
-        using var skillModel = await LanguageModel.CreateAsync();
+        using var skillModel = await LoadModelAsync();
         using var client = new AionInstructPreview.Chat.AionTextIntelligenceClient(skillModel);
         if (hasAdapterPath)
         {
@@ -84,31 +104,23 @@ if (args.Length > 0 && args[0] == "--text-intelligence")
     }
     catch (Exception error)
     {
+        // The using scopes above dispose the native model before this diagnostic.
+        RefreshConsoleWriters();
         Console.Error.WriteLine(AionTextIntelligenceClient.ErrorDetail(error));
         return 1;
     }
 }
 
-// Write model-load status to stderr so stdout remains dedicated to the streamed reply.
-Console.Error.WriteLine("[Aion Instruct Preview-console] Loading model (first run may take several minutes)...");
-
 LanguageModel model;
 try
 {
-    model = await LanguageModel.CreateAsync();
+    model = await LoadModelAsync();
 }
 catch (Exception ex)
 {
     Console.Error.WriteLine($"[Aion Instruct Preview-console] Model loading failed (0x{ex.HResult:X8}).");
     return 1;
 }
-finally
-{
-    // Native initialization can replace the standard handles; refresh the cached writers.
-    Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true });
-    Console.SetError(new StreamWriter(Console.OpenStandardError(), new UTF8Encoding(false)) { AutoFlush = true });
-}
-
 Console.WriteLine("[Aion Instruct Preview-console] Model ready.");
 object outputLock = new();
 bool acceptingUpdates = true;

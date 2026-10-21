@@ -96,13 +96,7 @@ public sealed partial class MainWindow : Window
         };
         if (_textUiReady && announcement is not null)
         {
-            DispatcherQueue.TryEnqueue(() =>
-            {
-                if (!_textUiReady) { return; }
-                var peer = FrameworkElementAutomationPeer.FromElement(announcement) ??
-                    FrameworkElementAutomationPeer.CreatePeerForElement(announcement);
-                peer?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
-            });
+            Announce(announcement);
         }
         if (e.PropertyName == nameof(ChatViewModel.CanCancelTextIntelligence))
         {
@@ -291,16 +285,35 @@ public sealed partial class MainWindow : Window
             _ => "Rewrite"
         };
         var validation = ValidateSkillInput();
-        SkillValidationMessage.Text = validation;
+        SetValidationMessage(SkillValidationMessage, validation);
         RunTextSkillButton.IsEnabled = ViewModel.TextToolsEnabled && validation.Length == 0;
         var hasPrompt = !string.IsNullOrWhiteSpace(ComparisonPromptInput.Text);
         CompareButton.IsEnabled = AdaptedOnlyButton.IsEnabled = ViewModel.TextToolsEnabled && hasPrompt && ViewModel.HasCustomAdapter;
         BaseOnlyButton.IsEnabled = ViewModel.TextToolsEnabled && hasPrompt;
-        CompareValidationMessage.Text = !ViewModel.HasCustomAdapter ? "Load a LoRA to compare it with the base model." :
-            !hasPrompt ? "Enter the prompt you used during training." : string.Empty;
+        SetValidationMessage(CompareValidationMessage,
+            !ViewModel.HasCustomAdapter ? "Load a LoRA to compare it with the base model." :
+            !hasPrompt ? "Enter the prompt you used during training." : string.Empty);
         CopySkillButton.IsEnabled = ViewModel.TextIntelligenceOutput.Length > 0 || ViewModel.TableHeader.Count > 0;
         CopyBaseButton.IsEnabled = ViewModel.BaseOutput.Length > 0;
         CopyAdapterButton.IsEnabled = ViewModel.AdaptedOutput.Length > 0;
+    }
+
+    private void SetValidationMessage(TextBlock element, string message)
+    {
+        if (element.Text == message) { return; }
+        element.Text = message;
+        Announce(element);
+    }
+
+    private void Announce(FrameworkElement element)
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (!_textUiReady) { return; }
+            var peer = FrameworkElementAutomationPeer.FromElement(element) ??
+                FrameworkElementAutomationPeer.CreatePeerForElement(element);
+            peer?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
+        });
     }
 
     private string ValidateSkillInput()
