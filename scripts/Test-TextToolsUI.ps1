@@ -174,9 +174,9 @@ Assert-UI -Condition { (Find-Control -Id 'RunTextSkillButton').Current.IsEnabled
 Invoke-Control -Id 'RunTextSkillButton'
 Wait-UI -Condition {
     (Find-Control -Id 'TextOperationBox').Current.IsEnabled -and
-    (Find-Control -Id 'SkillResultStatus').Current.Name -eq 'Complete.'
+    (Find-Control -Id 'SkillResultStatus').Current.Name -eq 'Nothing to summarize: each item needs both a participant and a message.'
 }
-Assert-UI -Condition { -not (Find-Control -Id 'CopySkillButton').Current.IsEnabled } -Message 'All-skipped conversation completes without a copyable result'
+Assert-UI -Condition { -not (Find-Control -Id 'CopySkillButton').Current.IsEnabled } -Message 'All-skipped conversation says there is nothing to summarize, with no copyable result'
 Set-Text -Id 'TextSkillInput' -Text '[]'
 Assert-UI -Condition { (Find-Control -Id 'RunTextSkillButton').Current.IsEnabled } -Message 'Empty conversation arrays are accepted'
 Set-Text -Id 'TextSkillInput' -Text '[{"participant":"Alex","message":null}]'

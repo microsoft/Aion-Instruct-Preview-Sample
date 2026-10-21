@@ -441,7 +441,12 @@ public sealed class ChatViewModel : INotifyPropertyChanged, IDisposable
             var output = await _textIntelligenceClient.RunAsync(operation, text, tone, instruction,
                 conversationOptions, cancellation.Token);
             if (_disposed) { return; }
-            TextIntelligenceStatus = ResultStatus(output.Status);
+            // The SDK skips items that lack a participant or a message, and completes with no
+            // text when none are left.
+            TextIntelligenceStatus = operation == TextOperation.SummarizeConversation &&
+                output.Status == LanguageModelResponseStatus.Complete && output.Text.Length == 0
+                    ? "Nothing to summarize: each item needs both a participant and a message."
+                    : ResultStatus(output.Status);
             if (output.Status == LanguageModelResponseStatus.Complete)
             {
                 TextIntelligenceOutput = output.Text;

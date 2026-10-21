@@ -131,7 +131,8 @@ custom rewrite, and collapsed conversation options for conversation summary. **T
 fills a task-specific input. The action is disabled for empty or invalid input.
 Conversation JSON items need participant/message strings, but either string can be empty: the SDK
 skips those items, as with attachment-only emails. An empty array or all-skipped conversation completes
-with no summary. Null fields/items, multiline participants, and reserved message framing remain invalid.
+with no summary, and the status says there's nothing to summarize. Null fields/items, multiline
+participants, and reserved message framing remain invalid.
 Conversation kind and language are explicitly advisory in this preview: native telemetry records
 them, but they do not select a prompt or translate output. Language defaults to empty.
 
