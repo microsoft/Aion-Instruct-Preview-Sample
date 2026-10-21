@@ -33,13 +33,13 @@ Write-Host ("Using framework {0} {1} ({2})." -f $pkg.Name, $pkg.Version, $pkg.Ar
 # Inference uses bundled WinML/ORT; WAR 2 supplies the remaining Windows App SDK types.
 Assert-WindowsAppRuntime2 -Architecture $arch
 $nugetLocal = Join-Path (Split-Path $here -Parent) "nuget-local"
-$sdkNupkg = @(Get-ChildItem -Path $nugetLocal -Filter "AionInstructPreview.Text.Framework.1.0.1.nupkg" -ErrorAction SilentlyContinue)
+$sdkNupkg = @(Get-ChildItem -Path $nugetLocal -Filter "AionInstructPreview.Text.Framework.1.1.0.nupkg" -ErrorAction SilentlyContinue)
 if ($sdkNupkg.Count -ne 1) {
     Write-Error "SDK NuGet package not found in $nugetLocal. Run .\Bootstrap.ps1 from the repo root first (it downloads the SDK), or follow the 'Getting the SDK NuGet' section of the README."
     exit 1
 }
 
 $csproj = Join-Path $here "AionInstructPreview.Chat.Wpf.csproj"
-Assert-UnpackagedSdkCacheMatches -PackagePath $sdkNupkg[0].FullName -Version '1.0.1' `
+Assert-UnpackagedSdkCacheMatches -PackagePath $sdkNupkg[0].FullName -Version '1.1.0' `
     -ConfigFile $configPath -ProjectPath $csproj
 dotnet run --project $csproj -c Release @restoreArgs

@@ -34,7 +34,7 @@
       WinML stack the model ran on; the framework now ships its own WinML and ORT,
       and the SDK's targets actively remove a 1.8 dependency if it finds one.
     -->
-    <PackageDependency Name="Microsoft.AionInstructPreview.Framework.1.0" MinVersion="1.0.0.3" Publisher="CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US" />
+    <PackageDependency Name="Microsoft.AionInstructPreview.Framework.1.0" MinVersion="1.1.0.0" Publisher="CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US" />
     <PackageDependency Name="Microsoft.WindowsAppRuntime.2" MinVersion="2.0.1.0" Publisher="CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US" />
   </Dependencies>
   <Resources>

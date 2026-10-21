@@ -55,9 +55,9 @@ internal static class FrameworkDependency
 
         AddProcessDependency(
             AionFamilyName,
-            minVersion: (1UL << 48) | 3UL,
+            minVersion: (1UL << 48) | (1UL << 32),
             arch,
-            "Install Aion Instruct Preview framework 1.0.0.3 or newer. Run.ps1 checks this.");
+            "Install Aion Instruct Preview framework 1.1.0.0 or newer. Run.ps1 checks this.");
     }
 
     private static void AddProcessDependency(

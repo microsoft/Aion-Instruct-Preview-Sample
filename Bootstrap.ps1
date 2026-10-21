@@ -493,11 +493,11 @@ if ($useLocalAssets) {
     Write-Host '    https://github.com/microsoft/Aion-Instruct-Preview-Sample/blob/main/docs/Aion-Instruct-Preview-Pre-Release-EULA.docx' -ForegroundColor Yellow
     Write-Host 'Review these terms before using the pre-release validation package.' -ForegroundColor Yellow
 }
-if ([version]$targetFwVersion -lt [version]'1.0.0.3') {
+if ([version]$targetFwVersion -lt [version]'1.1.0.0') {
     Stop-WithRecovery `
-        -Title "Release $tag predates this sample's required catalog framework (framework 1.0.0.3 / SDK 1.0.1)" `
+        -Title "Release $tag predates this sample's TI/LoRA framework (framework 1.1.0.0 / SDK 1.1.0)" `
         -Recovery @(
-            'Use a release containing framework 1.0.0.3 or newer and SDK NuGet 1.0.1 from the same build.',
+            'Use a release containing framework 1.1.0.0 or newer and SDK NuGet 1.1.0 from the same build.',
             'For local development, build/install the matching SDK and launch the sample manually.'
         )
 }
@@ -557,9 +557,19 @@ if ($fw) {
         if (-not (Test-Path $stage)) { New-Item -ItemType Directory -Path $stage | Out-Null }
         Write-Step "Downloading $expectedMsixName (several GB; this may take a while) ..."
         $msixPath = Join-Path $stage $expectedMsixName
-        $msixUrl = Get-AssetUrl -Name $expectedMsixName
         try {
-            Invoke-WebRequest -Uri $msixUrl -Headers $ghHeaders -OutFile $msixPath -ErrorAction Stop
+            $wholeAsset = @($assets | Where-Object { $_.name -eq $expectedMsixName })
+            if ($wholeAsset.Count -eq 1) {
+                Invoke-WebRequest -Uri $wholeAsset[0].browser_download_url -Headers $ghHeaders -OutFile $msixPath -ErrorAction Stop
+            } elseif ($wholeAsset.Count -gt 1) {
+                throw "Ambiguous release asset $expectedMsixName."
+            } else {
+                . (Join-Path $PSScriptRoot 'scripts\ReleaseParts.ps1')
+                $manifestUrl = Get-AssetUrl -Name ($expectedMsixName + '.parts.json')
+                $manifest = Get-ReleasePartsManifest -Uri $manifestUrl -Headers $ghHeaders
+                Receive-ReleaseParts -Manifest $manifest -OutputPath $msixPath -Headers $ghHeaders `
+                    -ResolvePartUrl { param($name) Get-AssetUrl -Name $name }
+            }
         } catch {
             Stop-WithRecovery `
                 -Title "Download failed for $expectedMsixName ($($_.Exception.Message))" `

@@ -4,6 +4,7 @@ using System.Text;
 using System.Threading.Tasks;
 using AionInstructPreview.Text;
 using AionInstructPreview.Chat.ConsoleApp;
+using AionInstructPreview.Chat;
 
 // Unpackaged console harness for the Aion Instruct Preview SDK.
 //
@@ -28,26 +29,98 @@ catch (Exception ex)
 
 Console.OutputEncoding = new UTF8Encoding(false);
 
-// Write model-load status to stderr so stdout remains dedicated to the streamed reply.
-Console.Error.WriteLine("[Aion Instruct Preview-console] Loading model (first run may take several minutes)...");
+static void RefreshConsoleWriters()
+{
+    Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true });
+    Console.SetError(new StreamWriter(Console.OpenStandardError(), new UTF8Encoding(false)) { AutoFlush = true });
+}
+
+static async Task<LanguageModel> LoadModelAsync()
+{
+    Console.Error.WriteLine("[Aion Instruct Preview-console] Loading model (first run may take several minutes)...");
+    try
+    {
+        return await LanguageModel.CreateAsync();
+    }
+    finally
+    {
+        // Native initialization can replace the standard handles; refresh before reporting any result.
+        RefreshConsoleWriters();
+    }
+}
+
+// --text-intelligence <operation> <text-file> [adapter.safetensors] [tone/custom instruction]
+// Skill output is printed only after final moderation; unlike chat it is not streamed.
+if (args.Length > 0 && args[0] == "--text-intelligence")
+{
+    try
+    {
+        if (args.Length is < 3 or > 5 ||
+            !Enum.TryParse<AionInstructPreview.Chat.TextOperation>(args[1], out var operation) ||
+            !Enum.IsDefined(operation))
+        {
+            throw new TextInputValidationException("Usage: --text-intelligence <operation> <text-file> [adapter-path or -] [tone/custom instruction]");
+        }
+        var hasAdapterPath = args.Length >= 4 && args[3] != "-";
+        if (hasAdapterPath && operation != AionInstructPreview.Chat.TextOperation.GenerateWithLoRA)
+        {
+            throw new TextInputValidationException("Adapter paths are only used with GenerateWithLoRA. Text intelligence uses its built-in task adapters.");
+        }
+        if (operation == AionInstructPreview.Chat.TextOperation.GenerateWithLoRA && !hasAdapterPath)
+        {
+            throw new TextInputValidationException("GenerateWithLoRA requires an adapter path.");
+        }
+        var tone = TextRewriteTone.Default;
+        var instruction = args.Length == 5 ? args[4] : string.Empty;
+        if (operation == TextOperation.Rewrite && args.Length == 5 &&
+            (!Enum.TryParse(instruction, out tone) || !Enum.IsDefined(tone)))
+        {
+            throw new TextInputValidationException("Unknown rewrite tone.");
+        }
+        var text = await File.ReadAllTextAsync(args[2]);
+        AionTextIntelligenceClient.ValidateInput(operation, text, instruction);
+        using var skillModel = await LoadModelAsync();
+        using var client = new AionInstructPreview.Chat.AionTextIntelligenceClient(skillModel);
+        if (hasAdapterPath)
+        {
+            try { await client.LoadAdapterAsync(Path.GetFullPath(args[3])); }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine(AionTextIntelligenceClient.AdapterErrorDetail(error));
+                return 1;
+            }
+            if (client.AdapterLoadStatus != LanguageModelLowRankAdapterStatus.Compatible)
+            {
+                Console.Error.WriteLine($"Adapter loaded with warning: {client.AdapterLoadMessage}");
+            }
+        }
+        var result = await client.RunAsync(operation, text, tone, instruction,
+            new ConversationSummaryOptions(), CancellationToken.None);
+        Console.Error.WriteLine($"Text intelligence status: {result.Status}");
+        if (result.Status != LanguageModelResponseStatus.Complete) { return 1; }
+        if (result.Text.Length > 0) { Console.WriteLine(result.Text); }
+        foreach (var row in result.Rows) { Console.WriteLine(string.Join(" | ", row.Columns)); }
+        return 0;
+    }
+    catch (Exception error)
+    {
+        // The using scopes above dispose the native model before this diagnostic.
+        RefreshConsoleWriters();
+        Console.Error.WriteLine(AionTextIntelligenceClient.ErrorDetail(error));
+        return 1;
+    }
+}
 
 LanguageModel model;
 try
 {
-    model = await LanguageModel.CreateAsync();
+    model = await LoadModelAsync();
 }
 catch (Exception ex)
 {
     Console.Error.WriteLine($"[Aion Instruct Preview-console] Model loading failed (0x{ex.HResult:X8}).");
     return 1;
 }
-finally
-{
-    // Native initialization can replace the standard handles; refresh the cached writers.
-    Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true });
-    Console.SetError(new StreamWriter(Console.OpenStandardError(), new UTF8Encoding(false)) { AutoFlush = true });
-}
-
 Console.WriteLine("[Aion Instruct Preview-console] Model ready.");
 object outputLock = new();
 bool acceptingUpdates = true;

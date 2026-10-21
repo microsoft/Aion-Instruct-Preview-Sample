@@ -75,14 +75,17 @@ foreach ($relative in @('unpackaged-console\Run.ps1', 'unpackaged-wpf\Run.ps1'))
     foreach ($nativeArchitecture in @('ARM64', 'x64')) {
         $otherArchitecture = if ($nativeArchitecture -eq 'ARM64') { 'x64' } else { 'ARM64' }
         $common = @{ Path = $path; NativeArchitecture = $nativeArchitecture }
-        Test-Launcher @common -HasWar2 $true -FrameworkVersion '1.0.0.3' -ExpectBuild $true
-        Test-Launcher @common -HasWar2 $false -FrameworkVersion '1.0.0.3' -ExpectBuild $false
+        Test-Launcher @common -HasWar2 $true -FrameworkVersion '1.1.0.0' -ExpectBuild $true
+        Test-Launcher @common -HasWar2 $false -FrameworkVersion '1.1.0.0' -ExpectBuild $false
+        foreach ($version in '1.0.0.3', '1.0.0.4', '1.0.4.46', '1.0.65535.65535') {
+            Test-Launcher @common -HasWar2 $true -FrameworkVersion $version -ExpectBuild $false
+        }
         Test-Launcher @common -HasWar2 $true -FrameworkVersion '1.0.0.2' -ExpectBuild $false
         Test-Launcher @common -HasWar2 $true -FrameworkVersion '1.0.0.1' -ExpectBuild $false
         Test-Launcher @common -HasWar2 $true -FrameworkVersion '1.0.0.0' -ExpectBuild $false
-        Test-Launcher @common -HasWar2 $true -FrameworkVersion '1.0.0.3' -ExpectBuild $false `
+        Test-Launcher @common -HasWar2 $true -FrameworkVersion '1.1.0.0' -ExpectBuild $false `
             -WarArchitecture $otherArchitecture
-        Test-Launcher @common -HasWar2 $true -FrameworkVersion '1.0.0.3' -ExpectBuild $true `
+        Test-Launcher @common -HasWar2 $true -FrameworkVersion '1.1.0.0' -ExpectBuild $true `
             -NuGetConfig (Join-Path $root 'nuget.config')
     }
 }
@@ -102,4 +105,4 @@ foreach ($parameter in @('FrameworkMsixPath', 'SdkNuGetPath')) {
     }
     if (-not $rejected) { throw "Bootstrap did not reject lone -$parameter before setup." }
 }
-Write-Output 'PASS: 28 launcher scenarios and 5 missing-input checks; no packages or apps changed.'
+Write-Output 'PASS: 44 launcher scenarios and 5 missing-input checks; no packages or apps changed.'

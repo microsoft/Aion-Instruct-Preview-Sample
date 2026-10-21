@@ -2,6 +2,7 @@ using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Microsoft.UI.Dispatching;
@@ -25,6 +26,91 @@ public sealed class ChatViewModel : INotifyPropertyChanged, IDisposable
     private readonly DispatcherQueue _dispatcher;
     private AionInstructClient? _aionClient;
     private AionImageDescriptionClient? _descriptionClient;
+    private AionTextIntelligenceClient? _textIntelligenceClient;
+    private CancellationTokenSource? _textCancellation;
+    private bool _runningComparison;
+    private string _textIntelligenceOutput = string.Empty;
+    private string _textIntelligenceStatus = "Results appear here.";
+    private string _baseStatus = "Base model results appear here.";
+    private string _adaptedStatus = "Load a LoRA to compare its output.";
+
+    public TextRewriteTone[] RewriteTones { get; } = Enum.GetValues<TextRewriteTone>();
+    public ObservableCollection<TextIntelligenceTableRow> TableRows { get; } = [];
+    public IReadOnlyList<string> TableHeader { get; private set; } = [];
+    public string TextResultProvenance { get; private set; } = string.Empty;
+    public string AdapterFeedback { get; private set; } = string.Empty;
+    public Visibility AdapterFeedbackVisibility => AdapterFeedback.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility SkillProvenanceVisibility => TextResultProvenance.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility SkillOutputVisibility => TextIntelligenceOutput.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility ComparisonDetailsVisibility => ComparisonPrompt.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+    public string BaseOutput { get; private set; } = string.Empty;
+    public string BaseStatus
+    {
+        get => _baseStatus;
+        private set
+        {
+            if (_baseStatus == value) { return; }
+            _baseStatus = value;
+            Raise();
+        }
+    }
+    public string AdaptedOutput { get; private set; } = string.Empty;
+    public string AdaptedStatus
+    {
+        get => _adaptedStatus;
+        private set
+        {
+            if (_adaptedStatus == value) { return; }
+            _adaptedStatus = value;
+            Raise();
+        }
+    }
+    public string ComparisonProvenance { get; private set; } = string.Empty;
+    public string ComparisonPrompt { get; private set; } = string.Empty;
+    public bool ComparisonOutOfDate { get; private set; }
+    public Visibility ComparisonStaleVisibility => ComparisonOutOfDate ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility TableVisibility => TableHeader.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+    public string TextIntelligenceOutput
+    {
+        get => _textIntelligenceOutput;
+        private set { _textIntelligenceOutput = value; Raise(); Raise(nameof(SkillOutputVisibility)); }
+    }
+    public string TextIntelligenceStatus
+    {
+        get => _textIntelligenceStatus;
+        private set
+        {
+            if (_textIntelligenceStatus == value) { return; }
+            _textIntelligenceStatus = value;
+            Raise();
+        }
+    }
+    public bool HasCustomAdapter => _textIntelligenceClient?.AdapterPath is not null;
+    public string AdapterPath => _textIntelligenceClient?.AdapterPath ?? string.Empty;
+    public string AdapterName => HasCustomAdapter ? System.IO.Path.GetFileName(AdapterPath) : "No custom LoRA loaded";
+    public string AdapterStatus => $"Adapter: {AdapterName}";
+    public bool HasAdapterWarning => _textIntelligenceClient?.AdapterLoadStatus is
+        LanguageModelLowRankAdapterStatus.RevalidationRecommended or LanguageModelLowRankAdapterStatus.DeprecatedFormat;
+    public string AdapterWarningMessage => _textIntelligenceClient?.AdapterLoadStatus switch
+    {
+        LanguageModelLowRankAdapterStatus.RevalidationRecommended =>
+            "The adapter loaded, but its declared base model version differs. Revalidate its accuracy against this Aion Instruct model and retrain if needed.",
+        LanguageModelLowRankAdapterStatus.DeprecatedFormat =>
+            "The adapter loaded using a deprecated format. Re-export it using the current supported format.",
+        _ => string.Empty
+    };
+    public string AdapterLoadDetails => _textIntelligenceClient?.AdapterLoadMessage ?? string.Empty;
+    public string AdapterScope => "Custom adapters are used only for language-model generation on this tab. Text intelligence uses its built-in task adapters; Chat and image description are unchanged.";
+    public string LoadAdapterLabel => HasCustomAdapter ? "Replace LoRA..." : "Load LoRA...";
+    public Visibility UnloadAdapterVisibility => HasCustomAdapter ? Visibility.Visible : Visibility.Collapsed;
+    public bool CanCancelTextIntelligence => _textCancellation is not null;
+    public bool IsComparisonRunning => CanCancelTextIntelligence && _runningComparison;
+    public bool IsSkillRunning => CanCancelTextIntelligence && !_runningComparison;
+    public bool TextToolsEnabled => _state == ModelState.Ready;
+    public Visibility SkillRunningVisibility => CanCancelTextIntelligence && !_runningComparison ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility ComparisonRunningVisibility => CanCancelTextIntelligence && _runningComparison ? Visibility.Visible : Visibility.Collapsed;
+    public bool IsLoadingAdapter { get; private set; }
+    public Visibility AdapterLoadingVisibility => IsLoadingAdapter ? Visibility.Visible : Visibility.Collapsed;
 
     private ModelState _state = ModelState.Loading;
     private string _promptText = string.Empty;
@@ -141,6 +227,7 @@ public sealed class ChatViewModel : INotifyPropertyChanged, IDisposable
             Raise(nameof(CanStartNewConversation));
             Raise(nameof(NewConversationButtonEnabled));
             Raise(nameof(DescribeEnabled));
+            Raise(nameof(TextToolsEnabled));
             (SendCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (NewConversationCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
@@ -212,6 +299,7 @@ public sealed class ChatViewModel : INotifyPropertyChanged, IDisposable
                 return;
             }
             _aionClient = client;
+            _textIntelligenceClient = new AionTextIntelligenceClient(client.Model);
             State = ModelState.Ready;
             Raise(nameof(CanStartNewConversation));
             Raise(nameof(NewConversationButtonEnabled));
@@ -225,6 +313,264 @@ public sealed class ChatViewModel : INotifyPropertyChanged, IDisposable
             State = ModelState.Error;
         }
     }
+
+    public async Task LoadLoRAAsync(string path)
+    {
+        if (_state != ModelState.Ready || _textIntelligenceClient is null || _disposed) { return; }
+        State = ModelState.Generating;
+        ClearComparisonResults();
+        IsLoadingAdapter = true;
+        Raise(nameof(IsLoadingAdapter));
+        Raise(nameof(AdapterLoadingVisibility));
+        AdapterFeedback = "Loading and validating adapter...";
+        Raise(nameof(AdapterFeedback));
+        Raise(nameof(AdapterFeedbackVisibility));
+        try
+        {
+            await _textIntelligenceClient.LoadAdapterAsync(path);
+            if (!_disposed)
+            {
+                AdaptedStatus = "LoRA results appear here.";
+                AdapterFeedback = HasAdapterWarning ? $"Loaded {AdapterName} with a compatibility warning." :
+                    $"Loaded {AdapterName}. Compatibility validated; quality and safety still need evaluation.";
+            }
+        }
+        catch (Exception error)
+        {
+            if (!_disposed)
+            {
+                AdapterFeedback = HasCustomAdapter
+                    ? $"Replacement failed; still using {AdapterName}. {AionTextIntelligenceClient.AdapterErrorDetail(error)}"
+                    : $"Adapter could not be loaded. {AionTextIntelligenceClient.AdapterErrorDetail(error)}";
+            }
+        }
+        finally
+        {
+            if (!_disposed)
+            {
+                IsLoadingAdapter = false;
+                Raise(nameof(IsLoadingAdapter));
+                Raise(nameof(AdapterLoadingVisibility));
+                RaiseAdapterState();
+                State = ModelState.Ready;
+            }
+        }
+    }
+
+    public void UnloadLoRA()
+    {
+        if (_state != ModelState.Ready || _textIntelligenceClient is null || _disposed) { return; }
+        _textIntelligenceClient.UnloadAdapter();
+        ClearComparisonResults();
+        AdapterFeedback = "LoRA unloaded. Text intelligence, chat and image description are unchanged.";
+        RaiseAdapterState();
+    }
+
+    private void RaiseAdapterState()
+    {
+        foreach (var name in new[] { nameof(HasCustomAdapter), nameof(AdapterName), nameof(AdapterPath),
+            nameof(AdapterStatus), nameof(AdapterScope), nameof(LoadAdapterLabel),
+            nameof(UnloadAdapterVisibility), nameof(AdapterFeedback), nameof(AdapterFeedbackVisibility),
+            nameof(HasAdapterWarning), nameof(AdapterWarningMessage), nameof(AdapterLoadDetails) }) { Raise(name); }
+    }
+
+    public void ClearSkillResult()
+    {
+        TextIntelligenceOutput = string.Empty;
+        TextIntelligenceStatus = "Results appear here.";
+        TextResultProvenance = string.Empty;
+        TableRows.Clear();
+        TableHeader = [];
+        Raise(nameof(TableHeader));
+        Raise(nameof(TableVisibility));
+        Raise(nameof(TextResultProvenance));
+        Raise(nameof(SkillProvenanceVisibility));
+    }
+
+    private void ClearComparisonResults()
+    {
+        BaseOutput = AdaptedOutput = ComparisonProvenance = ComparisonPrompt = string.Empty;
+        BaseStatus = "Base model results appear here.";
+        AdaptedStatus = HasCustomAdapter ? "LoRA results appear here." : "Load a LoRA to compare its output.";
+        ComparisonOutOfDate = false;
+        RaiseComparisonResults();
+    }
+
+    public void MarkComparisonOutOfDate()
+    {
+        if (CanCancelTextIntelligence || ComparisonProvenance.Length == 0 || ComparisonOutOfDate) { return; }
+        ComparisonOutOfDate = true;
+        Raise(nameof(ComparisonOutOfDate));
+        Raise(nameof(ComparisonStaleVisibility));
+    }
+
+    private void RaiseComparisonResults()
+    {
+        foreach (var name in new[] { nameof(BaseOutput), nameof(AdaptedOutput),
+            nameof(ComparisonProvenance), nameof(ComparisonPrompt),
+            nameof(ComparisonOutOfDate), nameof(ComparisonStaleVisibility), nameof(ComparisonDetailsVisibility) }) { Raise(name); }
+    }
+
+    private void RaiseTextRunning()
+    {
+        Raise(nameof(CanCancelTextIntelligence));
+        Raise(nameof(SkillRunningVisibility));
+        Raise(nameof(ComparisonRunningVisibility));
+        Raise(nameof(IsComparisonRunning));
+        Raise(nameof(IsSkillRunning));
+    }
+
+    public void CancelTextIntelligence() => _textCancellation?.Cancel();
+
+    public async Task RunTextIntelligenceAsync(TextOperation operation, string text, TextRewriteTone tone,
+        string instruction, ConversationSummaryOptions conversationOptions)
+    {
+        if (_state != ModelState.Ready || _textIntelligenceClient is null || _disposed) { return; }
+        State = ModelState.Generating;
+        ClearSkillResult();
+        TextResultProvenance = $"{TaskLabel(operation)} · {(operation == TextOperation.RewriteCustom ? "Built-in model" : "Built-in task adapter")}";
+        Raise(nameof(TextResultProvenance));
+        Raise(nameof(SkillProvenanceVisibility));
+        TextIntelligenceStatus = "Working - results appear after moderation.";
+        using var cancellation = new CancellationTokenSource();
+        _runningComparison = false;
+        _textCancellation = cancellation;
+        RaiseTextRunning();
+        try
+        {
+            var output = await _textIntelligenceClient.RunAsync(operation, text, tone, instruction,
+                conversationOptions, cancellation.Token);
+            if (_disposed) { return; }
+            // The SDK skips items that lack a participant or a message, and completes with no
+            // text when none are left.
+            TextIntelligenceStatus = operation == TextOperation.SummarizeConversation &&
+                output.Status == LanguageModelResponseStatus.Complete && output.Text.Length == 0
+                    ? "Nothing to summarize: each item needs both a participant and a message."
+                    : ResultStatus(output.Status);
+            if (output.Status == LanguageModelResponseStatus.Complete)
+            {
+                TextIntelligenceOutput = output.Text;
+                if (output.Rows.Count > 0)
+                {
+                    TableHeader = output.Rows[0].Columns;
+                    foreach (var row in output.Rows.Skip(1)) { TableRows.Add(row); }
+                    Raise(nameof(TableHeader));
+                    Raise(nameof(TableVisibility));
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            if (!_disposed) { TextIntelligenceStatus = "Cancelled."; }
+        }
+        catch (Exception error)
+        {
+            if (!_disposed) { TextIntelligenceStatus = FriendlyError(error); }
+        }
+        finally
+        {
+            _textCancellation = null;
+            if (!_disposed) { RaiseTextRunning(); State = ModelState.Ready; }
+        }
+    }
+
+    public async Task RunComparisonAsync(string prompt, bool runBase, bool runAdapter)
+    {
+        if (_state != ModelState.Ready || _textIntelligenceClient is null || _disposed) { return; }
+        var client = _textIntelligenceClient;
+        if (string.IsNullOrWhiteSpace(prompt) || (!runBase && !runAdapter) || (runAdapter && !HasCustomAdapter))
+        {
+            ClearComparisonResults();
+            var detail = string.IsNullOrWhiteSpace(prompt) ? "Enter a prompt before running." :
+                !runBase && !runAdapter ? "Select a comparison run." : string.Empty;
+            BaseStatus = runBase
+                ? detail.Length > 0 ? detail : "Comparison not run. Load a LoRA or choose base only."
+                : "Not run.";
+            AdaptedStatus = runAdapter
+                ? detail.Length > 0 ? detail : "Load a LoRA before running it."
+                : !runBase ? detail : "Not run.";
+            RaiseComparisonResults();
+            return;
+        }
+        State = ModelState.Generating;
+        BaseOutput = AdaptedOutput = string.Empty;
+        BaseStatus = runBase ? "Waiting..." : "Not run.";
+        AdaptedStatus = runAdapter ? "Waiting..." : "Not run.";
+        ComparisonPrompt = prompt;
+        ComparisonProvenance = runBase && runAdapter
+            ? $"Adapter: {AdapterName} · Same prompt and default sampling · Independent single-turn calls"
+            : runBase ? "Base model only · Default sampling · No LoRA used"
+            : $"LoRA only: {AdapterName} · Default sampling · Single-turn call";
+        ComparisonOutOfDate = false;
+        using var cancellation = new CancellationTokenSource();
+        _runningComparison = true;
+        _textCancellation = cancellation;
+        RaiseTextRunning();
+        RaiseComparisonResults();
+        try
+        {
+            if (runBase) { await RunPaneAsync(TextOperation.GenerateBase, true); }
+            if (runAdapter)
+            {
+                if (cancellation.IsCancellationRequested) { AdaptedStatus = "Cancelled before starting."; }
+                else { await RunPaneAsync(TextOperation.GenerateWithLoRA, false); }
+            }
+        }
+        finally
+        {
+            _textCancellation = null;
+            if (!_disposed)
+            {
+                RaiseComparisonResults();
+                RaiseTextRunning();
+                State = ModelState.Ready;
+            }
+        }
+
+        async Task RunPaneAsync(TextOperation operation, bool basePane)
+        {
+            string status;
+            string output = string.Empty;
+            if (basePane) { BaseStatus = "Working - results appear after moderation."; }
+            else { AdaptedStatus = "Working - results appear after moderation."; }
+            RaiseComparisonResults();
+            try
+            {
+                var result = await client.RunAsync(operation, prompt, TextRewriteTone.Default,
+                    string.Empty, new ConversationSummaryOptions(), cancellation.Token);
+                status = ResultStatus(result.Status);
+                if (result.Status == LanguageModelResponseStatus.Complete) { output = result.Text; }
+            }
+            catch (OperationCanceledException) { status = "Cancelled."; }
+            catch (Exception error) { status = FriendlyError(error); }
+            if (_disposed) { return; }
+            if (basePane) { BaseOutput = output; BaseStatus = status; }
+            else { AdaptedOutput = output; AdaptedStatus = status; }
+            RaiseComparisonResults();
+        }
+    }
+
+    public static string TaskLabel(TextOperation operation) => operation switch
+    {
+        TextOperation.Summarize => "Summarize text",
+        TextOperation.SummarizeConversation => "Summarize conversation",
+        TextOperation.Rewrite => "Rewrite",
+        TextOperation.RewriteCustom => "Rewrite with custom instruction",
+        TextOperation.TextToTable => "Convert text to table",
+        _ => "Generate"
+    };
+
+    private static string ResultStatus(LanguageModelResponseStatus status) => status switch
+    {
+        LanguageModelResponseStatus.Complete => "Complete.",
+        LanguageModelResponseStatus.PromptBlockedByContentModeration => "Input blocked by moderation. Try different text or options.",
+        LanguageModelResponseStatus.ResponseBlockedByContentModeration => "Output blocked by moderation. No result is available.",
+        LanguageModelResponseStatus.BlockedByPolicy => "Blocked by the preview content policy.",
+        LanguageModelResponseStatus.PromptLargerThanContext => "Input is too long. Shorten it and try again.",
+        _ => "The model could not complete this request. No result is available."
+    };
+
+    private static string FriendlyError(Exception error) => AionTextIntelligenceClient.ErrorDetail(error);
 
     public async Task SendAsync()
     {
@@ -490,6 +836,9 @@ public sealed class ChatViewModel : INotifyPropertyChanged, IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        _textCancellation?.Cancel();
+        _textIntelligenceClient?.Dispose();
+        _textIntelligenceClient = null;
         _aionClient?.Dispose();
         _aionClient = null;
         _descriptionClient?.Dispose();

@@ -12,7 +12,7 @@ function Get-NativeAionArchitecture {
 }
 
 function Get-AionFrameworkPackage {
-    param([string]$Architecture, [version]$MinimumVersion = [version]'1.0.0.3')
+    param([string]$Architecture, [version]$MinimumVersion = [version]'1.1.0.0')
     $packages = @(Get-AppxPackage 'Microsoft.AionInstructPreview.Framework.1.0' |
         Where-Object { "$($_.Architecture)" -eq $Architecture } |
         Sort-Object { [version]$_.Version } -Descending)

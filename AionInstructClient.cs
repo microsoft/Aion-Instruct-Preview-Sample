@@ -28,6 +28,11 @@ public sealed class AionInstructClient : IDisposable
     private LanguageModelContext _context;
     private bool _disposed;
 
+    internal LanguageModel Model
+    {
+        get { ThrowIfDisposed(); return _model; }
+    }
+
     private AionInstructClient(LanguageModel model, LanguageModelContext context)
     {
         _model = model;

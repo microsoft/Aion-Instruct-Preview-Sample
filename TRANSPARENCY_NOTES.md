@@ -82,7 +82,10 @@ watermark may become visible when model output is pasted into certain applicatio
 
 Phi Silica-compatible LoRAs are not compatible with Aion Instruct. Developers who use custom
 LoRAs must use Foundry Toolkit to create new custom LoRAs for Aion Instruct.
-This preview sample API does not expose LoRA configuration.
+The sample exposes local LoRA loading for developer validation. The SDK checks
+compatibility with the shipped Aion Instruct model but does not establish adapter quality, training
+provenance, or Responsible AI qualification. Developers remain responsible for evaluating their
+trained adapters and their scenarios.
 
 ## Distribution and runtime notes
 
