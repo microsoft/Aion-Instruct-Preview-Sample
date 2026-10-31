@@ -103,9 +103,9 @@ if ($ci) {
     } elseif ($arch -eq 'x64' -and $procName -match 'Intel|Core\s*Ultra|Lunar|Arrow|Meteor') {
         Write-Check PASS 'Intel x64 -- catalog OpenVINO NPU path expected' $detail
     } elseif ($arch -eq 'x64' -and $procName -match 'AMD|Ryzen|Strix') {
-        Write-Check WARN 'AMD support is coming soon' $detail
+        Write-Check PASS 'AMD x64 -- catalog VitisAI NPU path expected' $detail
     } elseif ($arch -eq 'x64') {
-        Write-Check WARN 'x64 host, but the processor name does not match a supported Intel NPU' $detail
+        Write-Check WARN 'x64 host, but the processor name does not match a supported Intel or AMD NPU' $detail
     } else {
         Write-Check WARN ('Unexpected architecture: ' + $rawArch) $detail
     }
@@ -168,8 +168,13 @@ function Check-Package {
     }
 }
 
+$minimumFrameworkVersion = if ($arch -eq 'x64' -and $procName -match 'AMD|Ryzen|Strix') {
+    '1.1.0.2'
+} else {
+    '1.1.0.0'
+}
 Check-Package -Name 'Microsoft.AionInstructPreview.Framework.1.0' `
-              -Friendly 'Aion Instruct Preview framework MSIX' -MinVersion '1.1.0.0'
+              -Friendly 'Aion Instruct Preview framework MSIX' -MinVersion $minimumFrameworkVersion
 Check-Package -Name 'Microsoft.WindowsAppRuntime.2' -Friendly 'Windows App Runtime 2' -MinVersion '2.0.1.0'
 if ($arch -eq 'ARM64') {
     $qnn = @(Get-AppxPackage -Name '*WinML.Qualcomm.QNN.EP*.2*' -ErrorAction SilentlyContinue |
@@ -185,7 +190,7 @@ if ($arch -eq 'ARM64') {
                   -Friendly 'Intel OpenVINO catalog execution provider' `
                   -MinVersion '1.8.95.0'
 } elseif ($arch -eq 'x64' -and $procName -match 'AMD|Ryzen|Strix') {
-    Write-Check WARN 'AMD support is coming soon; provider readiness was not evaluated'
+    Write-Check INFO 'VitisAI EP 1.8.80 or newer will be acquired by the framework on first model load if needed'
 }
 # The packaged WinUI app is optional: the console and WPF samples are equally valid
 # consumers, and a developer using only those should not get a hard failure here.
@@ -197,8 +202,8 @@ Check-Package -Name 'AionInstructPreviewChat' -Friendly 'AionInstructPreview.Cha
 # packages (Microsoft.Windows.Apprep.ChxApp, the various *.Framework.* companions), so a
 # non-zero count says nothing about whether the SDK can actually run. It previously
 # reported PASS on a machine whose required OpenVINO EP was missing and where the SDK
-# could not start at all. The pinned per-architecture checks above are the real gate;
-# this list is here to help a human see what is present.
+# could not start at all. This list is here to help a human see what is present;
+# SDK EP selection is reported in section 4b or 6.
 Write-Host ''
 Write-Host '       (scanning for execution-provider packages...)' -ForegroundColor DarkGray
 $epPackages = @(Get-AppxPackage | Where-Object {
@@ -206,9 +211,9 @@ $epPackages = @(Get-AppxPackage | Where-Object {
 })
 if ($epPackages.Count -gt 0) {
     $detail = ($epPackages | ForEach-Object { '{0,-65} {1,-12} {2}' -f $_.Name, $_.Architecture, $_.Version }) -join "`n"
-    Write-Check INFO ("$($epPackages.Count) EP-related package(s) present (informational -- see the pinned check above)") $detail
+    Write-Check INFO ("$($epPackages.Count) EP-related package(s) present (informational)") $detail
 } else {
-    Write-Check INFO 'No EP-related packages found via AppX (informational -- see the pinned check above)'
+    Write-Check INFO 'No EP-related packages found via AppX (informational)'
 }
 
 # ---------------------------------------------------------------------------
@@ -587,7 +592,7 @@ if ($noAppToCapture) {
                 '^no-npu-ep-available$' {
                     Write-Check FAIL ("SDK found no compatible NPU EP; CPU fallback is not supported. " +
                         'Verify the catalog provider version and NPU driver: QNN 2.2480.49+, ' +
-                        'OpenVINO 1.8.95+. AMD support is coming soon.')
+                        'OpenVINO 1.8.95+, VitisAI 1.8.80+.')
                 }
                 '^no-catalog$' {
                     Write-Check FAIL ('SDK could not enumerate the WinML catalog; CPU fallback is not supported. ' +

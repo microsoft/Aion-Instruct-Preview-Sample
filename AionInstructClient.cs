@@ -39,10 +39,8 @@ public sealed class AionInstructClient : IDisposable
         _context = context;
     }
 
-    // Loads the underlying Aion Instruct Preview model. On first launch per process this
-    // can take 4-5 minutes while QNN compiles the QDQ ONNX models to the
-    // Snapdragon NPU. Callers must keep their loading UI up until this
-    // completes.
+    // Cold model loading can take several minutes while the NPU execution provider
+    // compiles the ONNX models. Callers must keep their loading UI up until this completes.
     public static async Task<AionInstructClient> CreateAsync()
     {
         var model = await LanguageModel.CreateAsync();

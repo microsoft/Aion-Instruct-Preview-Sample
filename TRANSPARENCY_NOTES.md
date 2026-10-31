@@ -71,7 +71,7 @@ As a new model, Aion Instruct has behavioral changes compared with Phi Silica. A
 developers must not rely on deterministic output.
 
 Performance, latency, memory usage, and output quality may vary depending on device hardware and
-configuration. AMD support will be added soon.
+configuration.
 
 ## Watermarking
 
