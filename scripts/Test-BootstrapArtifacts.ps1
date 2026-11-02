@@ -52,7 +52,31 @@ if ($intelRequirement.Label -ne 'OpenVINO' -or
     $intelRequirement.Minimum -ne [version]'1.8.95.0') {
     throw 'Intel provider requirements are incorrect.'
 }
-Assert-Rejected { Get-X64ProviderRequirement 'AMD Ryzen AI' } 'AMD support is coming soon'
+foreach ($processor in @('AMD Ryzen AI', 'Ryzen AI', 'Strix')) {
+    $amdRequirement = Get-X64ProviderRequirement $processor
+    if ($amdRequirement.Label -ne 'VitisAI' -or
+        $amdRequirement.Minimum -ne [version]'1.8.80.0') {
+        throw 'AMD provider requirements are incorrect.'
+    }
+}
+
+$amdFrameworkCheck = $ast.Find({
+    param($node)
+    $node -is [Management.Automation.Language.IfStatementAst] -and
+        $node.Extent.Text -match '^if \(\$x64Requirement -and \$x64Requirement.Label -eq ''VitisAI'''
+}, $true)
+if (-not $amdFrameworkCheck) { throw 'Missing AMD framework minimum check.' }
+$checkFramework = [scriptblock]::Create($amdFrameworkCheck.Extent.Text)
+$x64Requirement = Get-X64ProviderRequirement 'AMD Ryzen AI'
+foreach ($targetFwVersion in @('1.1.0.0', '1.1.0.1')) {
+    Assert-Rejected { & $checkFramework } 'AMD requires framework 1.1.0.2 or newer'
+}
+foreach ($targetFwVersion in @('1.1.0.2', '1.1.0.3')) {
+    & $checkFramework
+}
+$x64Requirement = Get-X64ProviderRequirement 'Intel Core Ultra'
+$targetFwVersion = '1.1.0.0'
+& $checkFramework
 
 $registrations = @(
     [pscustomobject]@{ Version = '1.0.0.2'; InstallLocation = 'old' },
@@ -66,10 +90,10 @@ if ($selection.Target.InstallLocation -ne 'target' -or
 }
 
 $bootstrapText = [IO.File]::ReadAllText((Join-Path $root 'Bootstrap.ps1'))
-$amdGate = $bootstrapText.IndexOf('$x64Requirement = Get-X64ProviderRequirement')
+$providerSelection = $bootstrapText.IndexOf('$x64Requirement = Get-X64ProviderRequirement')
 $frameworkDownload = $bootstrapText.IndexOf('# --- 4. Framework MSIX state')
-if ($amdGate -lt 0 -or $frameworkDownload -lt 0 -or $amdGate -gt $frameworkDownload) {
-    throw 'The unsupported-AMD gate must run before framework download and installation.'
+if ($providerSelection -lt 0 -or $frameworkDownload -lt 0 -or $providerSelection -gt $frameworkDownload) {
+    throw 'Hardware provider selection must run before framework download and installation.'
 }
 
 $temporary = Join-Path ([IO.Path]::GetTempPath()) ('AionBootstrapTests-' + [guid]::NewGuid())
@@ -166,7 +190,7 @@ try {
     $script:nugetVerifyExitCode = 1
     Assert-Rejected { Assert-MicrosoftSignedNuGet $package } 'does not have the expected Microsoft NuGet signature'
 
-    Write-Output 'PASS: cache, framework identity/content, MSIX signature, and NuGet signer checks; no packages deployed.'
+    Write-Output 'PASS: provider requirements, cache, framework identity/content, MSIX signature, and NuGet signer checks; no packages deployed.'
 } finally {
     $env:NUGET_PACKAGES = $previousCache
     Remove-Item -LiteralPath $temporary -Recurse -Force

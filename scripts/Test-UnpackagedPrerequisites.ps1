@@ -32,7 +32,13 @@ function Test-Launcher {
             }
         }
     }
-    function Get-ChildItem { param($Path, $Filter) return 'SDK-package-present' }
+    function Get-ChildItem {
+        param($Path, $Filter)
+        if ($Filter -ne 'AionInstructPreview.Text.Framework.1.1.1.nupkg') {
+            throw 'Launcher must select SDK NuGet 1.1.1.'
+        }
+        return 'SDK-package-present'
+    }
     function dotnet {
         if ($NuGetConfig) {
             $expected = '-p:RestoreConfigFile=' + (Get-Item -LiteralPath $NuGetConfig).FullName

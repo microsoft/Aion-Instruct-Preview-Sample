@@ -2,8 +2,8 @@
 
 You are working in the **consumer sample** for the **Aion Instruct Preview SDK**: an on-device
 language model that runs locally on the Copilot+ PC NPU — catalog QNN on Snapdragon (ARM64),
-catalog OpenVINO on Intel (x64), with AMD support coming soon. A compatible NPU is required (no
-CPU fallback, no cloud calls).
+catalog OpenVINO on Intel (x64), and catalog VitisAI on AMD (x64, framework 1.1.0.2+).
+A compatible NPU is required (no CPU fallback, no cloud calls).
 This repo shows a
 third-party developer how to (1) consume the SDK's framework package, (2) wire it into their own
 app, and (3) build + run a working chat app. Use this file to orient fast; the
@@ -57,7 +57,7 @@ release, drops the SDK NuGet into `./nuget-local/`, then builds and launches):
 ```
 
 **Manual build + run** (packaged WinUI app). Builds for **ARM64** (Snapdragon/QNN) and **x64**
-(Intel/OpenVINO; AMD support is coming soon) — `-p:Platform=ARM64` or `-p:Platform=x64`. The csproj defaults `$(Platform)` to
+(Intel/OpenVINO or AMD/VitisAI) — `-p:Platform=ARM64` or `-p:Platform=x64`. The csproj defaults `$(Platform)` to
 the box's *native* arch, normalising `AMD64` to `x64`, so a bare `dotnet build` does the right thing.
 
 ```powershell
@@ -75,9 +75,9 @@ framework dependency at runtime.
 **Visual Studio:** the F5 path is supported on **Visual Studio 2026 (18.x) only**, with the
 **(MSIX)** launch profile (never the `Project` profile — that runs the bare exe without identity and
 crashes with `REGDB_E_CLASSNOTREG`). VS 2022 (17.x) cannot F5 this Windows App SDK 2.0 app. Select the
-**Solution Platform set to ARM64** — a non-ARM64 platform makes F5 report
-*"The project needs to be deployed. Please enable Deploy in the Configuration Manager"* even though
-Deploy is enabled. Exact required VS 2026 components are in
+**Solution Platform matching your device** — ARM64 for Snapdragon, x64 for Intel or AMD.
+If F5 reports *"The project needs to be deployed. Please enable Deploy in the Configuration Manager"*,
+check that Deploy is enabled for the chosen platform. Exact required VS 2026 components are in
 README → [Visual Studio 2026 setup](../README.md#visual-studio-2026-setup).
 
 ## Consume the SDK in your OWN app
@@ -92,11 +92,12 @@ README → [Use Aion Instruct Preview in your own app](../README.md#use-aion-ins
    transitively does NOT import its source-generator targets, and you'll get a wall of
    `CS0246 LanguageModel not found`):
    ```xml
-   <PackageReference Include="AionInstructPreview.Text.Framework" Version="[1.1.0]" />
+   <PackageReference Include="AionInstructPreview.Text.Framework" Version="[1.1.1]" />
    <PackageReference Include="Microsoft.Windows.CsWinRT" Version="2.1.5" />
    ```
-   Pin the SDK with the exact range `[1.1.0]`. The sample requires framework
-   **1.1.0.0** or newer, with the SDK NuGet from the same release or build.
+   Pin the SDK with the exact range `[1.1.1]`. The sample requires framework
+   **1.1.0.0** or newer (**1.1.0.2** or newer on AMD), with the SDK NuGet from the same
+   release or build.
    Do not silently use an older SDK from a shared cache.
    A **packaged** app additionally needs `Microsoft.WindowsAppSDK`, `Microsoft.Windows.SDK.BuildTools`,
    and (for `dotnet run` without VS) `Microsoft.Windows.SDK.BuildTools.WinApp` — see the root
@@ -138,7 +139,8 @@ LanguageModelResponseResult result = await op;
   `ContentFilterOptions` is constructed by default and enables moderation in the moderation
   follow-up. That follow-up requires matching rebuilt SDK metadata and runtime; do not infer
   moderation support from the previously published package versions or invent a release version.
-  The sample uses NuGet **1.1.0** and framework **1.1.0.0**.
+  The sample pins NuGet **1.1.1**; the matching release framework is **1.1.0.2**.
+  The generic framework dependency minimum remains **1.1.0.0**.
 - **Separate features:** Text intelligence uses built-in task adapters. Developer LoRAs are
   exclusive to the LoRA validation tab's language-model generation. Preserve TI settings/results
   when loading or unloading a developer adapter.
@@ -151,8 +153,8 @@ LanguageModelResponseResult result = await op;
   `MaxPromptTokenCount`, or `ContextLength`. Keep measurements in the app using `Stopwatch`
   and progress callbacks. Report callback counts/rates as **updates**, not tokenizer tokens;
   both chat and image description use `GenerationMetrics`.
-- **First `CreateAsync()` per process is slow** (~4-5 min cold while QNN compiles the QDQ ONNX to the
-  NPU; ~30s warm from cache). Keep loading UI up; never assume it's hung.
+- **First `CreateAsync()` can be slow** while the NPU execution provider compiles the ONNX models.
+  Warm loads reuse valid caches. Keep loading UI up; never assume it's hung.
 - **Multi-turn is automatic** via the `LanguageModelContext` — reuse it; call `CreateContext()` again
   to start a fresh conversation.
 - `Progress` callbacks fire on a WinRT-chosen thread — the caller marshals back to the UI thread.
@@ -176,7 +178,8 @@ API reference: README → [API surface used](../README.md#api-surface-used).
 
 ## Hard rules / gotchas (do not violate)
 
-- **Snapdragon/QNN and Intel LNL/OpenVINO are supported; AMD support is coming soon.** The csproj defaults `$(Platform)`
+- **Snapdragon/QNN, Intel LNL/OpenVINO, and AMD/VitisAI are supported.** AMD requires framework
+  **1.1.0.2** or newer. The csproj defaults `$(Platform)`
   to the box's native arch and normalises `AMD64` to `x64` — don't break that logic.
 - **Never build under `C:\Windows\System32`** (the default dir of an elevated prompt). UAC file
   virtualization corrupts CsWinRT / XAML codegen (`cswinrt.exe exited with code 1`). Build

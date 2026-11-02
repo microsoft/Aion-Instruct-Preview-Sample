@@ -7,7 +7,7 @@
 #      or uses an explicitly supplied local artifact pair for release validation.
 #   3. Drops the SDK NuGet into ./nuget-local/.
 #   4. On ARM64 the framework acquires catalog QNN during first model creation.
-#      On supported x64 devices it acquires catalog OpenVINO.
+#      On supported x64 devices it acquires catalog OpenVINO or VitisAI.
 #   5. Builds and launches AionInstructPreview.Chat via 'dotnet run' (which
 #      registers the loose build-output layout as a development package).
 #
@@ -229,13 +229,12 @@ function Stop-WithRecovery {
 
 function Get-X64ProviderRequirement {
     param([string]$ProcessorName)
-    if ($ProcessorName -match 'AMD') {
-        Stop-WithRecovery `
-            -Title 'AMD support is coming soon' `
-            -Recovery @(
-                'Use a supported ARM64 Snapdragon or x64 Intel Lunar Lake Copilot+ PC for this preview.',
-                'Check a future release for AMD availability.'
-            )
+    if ($ProcessorName -match 'AMD|Ryzen|Strix') {
+        return [pscustomobject]@{
+            Label = 'VitisAI'
+            Pattern = $null
+            Minimum = [version]'1.8.80.0'
+        }
     }
     if ($ProcessorName -match 'Intel') {
         return [pscustomobject]@{
@@ -370,7 +369,7 @@ if (-not $arch) {
         -Title "Unsupported processor architecture=$rawArch (process arch $emulatedArch, native arch '$nativeArch')" `
         -Recovery @(
             'AionInstructPreview.Chat ships ARM64 and x64 builds.',
-            'Launch a 64-bit PowerShell on a supported ARM64 Snapdragon or x64 Intel Copilot+ PC and re-run.'
+            'Launch a 64-bit PowerShell on a supported ARM64 Snapdragon or x64 Intel or AMD Copilot+ PC and re-run.'
         )
 }
 Write-Step "Architecture: $arch"
@@ -495,11 +494,18 @@ if ($useLocalAssets) {
 }
 if ([version]$targetFwVersion -lt [version]'1.1.0.0') {
     Stop-WithRecovery `
-        -Title "Release $tag predates this sample's TI/LoRA framework (framework 1.1.0.0 / SDK 1.1.0)" `
+        -Title "Release $tag predates this sample's framework (framework 1.1.0.0 / SDK 1.1.1)" `
         -Recovery @(
-            'Use a release containing framework 1.1.0.0 or newer and SDK NuGet 1.1.0 from the same build.',
+            'Use a release containing framework 1.1.0.0 or newer and SDK NuGet 1.1.1 from the same build.',
             'For local development, build/install the matching SDK and launch the sample manually.'
         )
+}
+if ($x64Requirement -and $x64Requirement.Label -eq 'VitisAI' -and
+    [version]$targetFwVersion -lt [version]'1.1.0.2') {
+    Stop-WithRecovery -Title "AMD requires framework 1.1.0.2 or newer; selected framework is $targetFwVersion" -Recovery @(
+        'Use framework 1.1.0.2 or newer with the matching SDK NuGet 1.1.1.',
+        'Supply matching local framework and SDK artifacts if the release is not available yet.'
+    )
 }
 $assets = if ($release) { @($release.assets) } else { @() }
 
@@ -670,8 +676,11 @@ if ($arch -eq 'ARM64') {
     }
 } else {
     if ($x64Requirement) {
-        $providerPackages = @(Get-AppxPackage -Name $x64Requirement.Pattern -ErrorAction SilentlyContinue |
-            Where-Object { "$($_.Architecture)" -eq 'X64' })
+        $providerPackages = @()
+        if ($x64Requirement.Pattern) {
+            $providerPackages = @(Get-AppxPackage -Name $x64Requirement.Pattern -ErrorAction SilentlyContinue |
+                Where-Object { "$($_.Architecture)" -eq 'X64' })
+        }
         $compatible = @($providerPackages |
             Where-Object { [version]$_.Version -ge $x64Requirement.Minimum })
         if ($compatible.Count -gt 0) {
